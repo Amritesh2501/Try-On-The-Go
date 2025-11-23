@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -50,7 +51,7 @@ const InitialLoader: React.FC = () => {
 
   return (
     <motion.div 
-      className="fixed inset-0 bg-[#FAFAF9] z-50 flex flex-col items-center justify-center"
+      className="fixed inset-0 bg-[#FAFAF9] dark:bg-stone-950 z-50 flex flex-col items-center justify-center transition-colors duration-300"
       variants={containerVariants}
       exit="exit"
     >
@@ -64,7 +65,7 @@ const InitialLoader: React.FC = () => {
           strokeWidth="0.8" // Elegant line width
           strokeLinecap="round" 
           strokeLinejoin="round"
-          className="text-gray-900"
+          className="text-gray-900 dark:text-stone-100"
         >
           {/* T-Shirt Path */}
           <motion.path
@@ -89,10 +90,10 @@ const InitialLoader: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5, duration: 1 }}
       >
-        <h1 className="text-3xl font-serif tracking-widest text-gray-900">
+        <h1 className="text-3xl font-serif tracking-widest text-gray-900 dark:text-stone-100">
             Try on the Go
         </h1>
-        <p className="text-xs text-gray-400 font-sans mt-2 tracking-widest uppercase">Digital Atelier</p>
+        <p className="text-xs text-gray-400 dark:text-stone-500 font-sans mt-2 tracking-widest uppercase">Digital Atelier</p>
       </motion.div>
     </motion.div>
   );

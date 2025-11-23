@@ -12,12 +12,10 @@ import WardrobePanel from './components/WardrobeModal';
 import OutfitStack from './components/OutfitStack';
 import { generateVirtualTryOnImage, generatePoseVariation } from './services/geminiService';
 import { OutfitLayer, WardrobeItem } from './types';
-import { ChevronDownIcon, ChevronUpIcon } from './components/icons';
 import { defaultWardrobe } from './wardrobe';
 import Footer from './components/Footer';
 import Header from './components/Header';
 import { getFriendlyErrorMessage } from './lib/utils';
-import Spinner from './components/Spinner';
 import InitialLoader from './components/InitialLoader';
 
 const POSE_INSTRUCTIONS = [
@@ -241,7 +239,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="font-sans bg-[#FAFAF9] min-h-screen text-gray-900 selection:bg-gray-200">
+    <div className="font-sans bg-[#FAFAF9] dark:bg-stone-950 w-full h-full text-gray-900 dark:text-stone-50 selection:bg-gray-200 dark:selection:bg-stone-800 transition-colors duration-300 overflow-hidden">
       <AnimatePresence mode="wait">
         {showInitialLoader && (
            <InitialLoader key="loader" />
@@ -250,7 +248,7 @@ const App: React.FC = () => {
         {!showInitialLoader && !isAppStarted && (
           <motion.div
             key="start-screen"
-            className="w-full min-h-screen relative flex flex-col"
+            className="w-full h-full relative flex flex-col overflow-hidden"
             variants={pageVariants}
             initial="initial"
             animate="animate"
@@ -258,7 +256,8 @@ const App: React.FC = () => {
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
             <Header />
-            <main className="flex-grow flex items-center justify-center pt-20 pb-20">
+            {/* Added relative and overflow-hidden to ensure main content scales correctly without scrolling */}
+            <main className="flex-grow flex items-center justify-center w-full h-full relative overflow-hidden pt-16 pb-12">
                 <StartScreen 
                   onModelFinalized={handleModelFinalized} 
                   initialImage={generatedModelUrl}
@@ -272,17 +271,15 @@ const App: React.FC = () => {
         {!showInitialLoader && isAppStarted && (
           <motion.div
             key="main-app"
-            className="relative h-screen w-screen overflow-hidden flex flex-col md:flex-row bg-[#FAFAF9]"
+            className="relative w-full h-full overflow-hidden flex flex-col md:flex-row bg-[#FAFAF9] dark:bg-stone-950 transition-colors duration-300"
             variants={pageVariants}
             initial="initial"
             animate="animate"
             exit="exit"
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
-            {/* Try on the Go branding removed from absolute position to avoid overlap */}
-
             {/* Main Canvas Area */}
-            <main className="flex-grow relative h-full order-1 md:order-1">
+            <main className="flex-grow relative h-full order-1 md:order-1 overflow-hidden">
               <Canvas 
                 displayImageUrl={displayImageUrl}
                 onBack={handleBackToStart}
@@ -297,19 +294,19 @@ const App: React.FC = () => {
 
             {/* Sidebar / Panel */}
             <aside 
-              className={`absolute md:relative z-40 order-2 md:order-2 bottom-0 right-0 w-full md:w-[400px] bg-white/80 backdrop-blur-xl md:border-l border-white/20 shadow-[-10px_0_30px_rgba(0,0,0,0.02)] transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isSheetCollapsed ? 'translate-y-[calc(100%-4rem)]' : 'translate-y-0'} md:translate-y-0 flex flex-col h-[85vh] md:h-full rounded-t-3xl md:rounded-none ring-1 ring-black/5 md:ring-0`}
+              className={`absolute md:relative z-40 order-2 md:order-2 bottom-0 right-0 w-full md:w-[400px] bg-white/80 dark:bg-stone-900/80 backdrop-blur-xl md:border-l border-white/20 dark:border-stone-800 shadow-[-10px_0_30px_rgba(0,0,0,0.02)] transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isSheetCollapsed ? 'translate-y-[calc(100%-4rem)]' : 'translate-y-0'} md:translate-y-0 flex flex-col h-[85vh] md:h-full rounded-t-3xl md:rounded-none ring-1 ring-black/5 dark:ring-white/5 md:ring-0`}
             >
                 {/* Mobile Handle */}
                 <button 
                   onClick={() => setIsSheetCollapsed(!isSheetCollapsed)} 
                   className="md:hidden w-full h-12 flex items-center justify-center flex-shrink-0"
                 >
-                  <div className="w-12 h-1.5 bg-gray-200 rounded-full"></div>
+                  <div className="w-12 h-1.5 bg-gray-200 dark:bg-stone-700 rounded-full"></div>
                 </button>
 
                 <div className="flex-grow overflow-y-auto p-6 space-y-8 custom-scrollbar">
                   {error && (
-                    <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl text-sm leading-relaxed shadow-sm">
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900 text-red-600 dark:text-red-400 p-4 rounded-2xl text-sm leading-relaxed shadow-sm">
                       <p className="font-bold mb-1">Attention needed</p>
                       <p>{error}</p>
                     </div>

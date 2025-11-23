@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -5,7 +6,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UploadCloudIcon, PlusIcon } from './icons';
+import { PlusIcon } from './icons';
 import { generateModelImage } from '../services/geminiService';
 import Spinner from './Spinner';
 import { getFriendlyErrorMessage } from '../lib/utils';
@@ -78,20 +79,20 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
     <AnimatePresence mode="wait">
       <motion.div
         key="content"
-        className="w-full max-w-4xl mx-auto flex flex-col items-center justify-center min-h-[80vh] px-6"
+        className="w-full h-full max-w-4xl mx-auto flex flex-col items-center justify-center px-6 overflow-hidden relative"
         variants={containerVariants}
         initial="hidden"
         animate="visible"
         exit="exit"
       >
-        {/* Header Text */}
+        {/* Header Text - Flexible height, shrinks if needed */}
         {!generatedModelUrl && !isGenerating && (
-          <motion.div variants={itemVariants} className="text-center mb-12">
-            <h1 className="text-5xl md:text-7xl font-serif text-gray-900 mb-6 leading-tight">
+          <motion.div variants={itemVariants} className="text-center mb-6 md:mb-12 flex-shrink-0 z-10">
+            <h1 className="text-4xl md:text-7xl font-serif text-gray-900 dark:text-stone-50 mb-4 leading-tight">
               Virtual <br className="hidden md:block" />
-              <span className="italic text-gray-600">Fitting Room</span>
+              <span className="italic text-gray-600 dark:text-stone-400">Fitting Room</span>
             </h1>
-            <p className="text-gray-500 font-sans text-lg max-w-md mx-auto">
+            <p className="text-gray-500 dark:text-stone-400 font-sans text-base md:text-lg max-w-md mx-auto hidden sm:block">
               Upload a photo to create your digital twin and start styling instantly.
             </p>
           </motion.div>
@@ -99,9 +100,9 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
 
         {/* State 1: Upload (Initial) */}
         {!isGenerating && !generatedModelUrl && (
-          <motion.div variants={itemVariants} className="w-full max-w-md">
+          <motion.div variants={itemVariants} className="w-full max-w-md flex-shrink-1 min-h-0 flex flex-col items-center justify-center">
              <div 
-                className={`relative w-full aspect-[4/5] md:aspect-square bg-white rounded-3xl border-2 transition-all duration-300 ease-out flex flex-col items-center justify-center gap-6 group overflow-hidden shadow-sm hover:shadow-xl ${isHovering ? 'border-gray-900 scale-[1.02]' : 'border-dashed border-gray-300'}`}
+                className={`relative w-full aspect-[4/5] md:aspect-square max-h-[50vh] bg-white dark:bg-stone-900 rounded-3xl border-2 transition-all duration-300 ease-out flex flex-col items-center justify-center gap-6 group overflow-hidden shadow-sm hover:shadow-xl ${isHovering ? 'border-gray-900 dark:border-stone-500 scale-[1.02]' : 'border-dashed border-gray-300 dark:border-stone-700'}`}
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
              >
@@ -113,19 +114,19 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
                   onChange={handleFileChange} 
                 />
                 
-                <div className={`p-6 rounded-full bg-gray-50 transition-transform duration-500 ${isHovering ? 'scale-110 bg-gray-100' : ''}`}>
-                    <PlusIcon className="w-8 h-8 text-gray-400" />
+                <div className={`p-6 rounded-full bg-gray-50 dark:bg-stone-800 transition-transform duration-500 ${isHovering ? 'scale-110 bg-gray-100 dark:bg-stone-700' : ''}`}>
+                    <PlusIcon className="w-8 h-8 text-gray-400 dark:text-stone-500" />
                 </div>
                 <div className="text-center px-6 pointer-events-none">
-                    <span className="block font-serif text-2xl text-gray-900 mb-2">Upload Photo</span>
-                    <span className="text-sm text-gray-500 font-medium">Drag & drop or click to browse</span>
+                    <span className="block font-serif text-2xl text-gray-900 dark:text-stone-100 mb-2">Upload your photo</span>
+                    <span className="text-sm text-gray-500 dark:text-stone-500 font-medium">Drag & drop or click to browse</span>
                 </div>
              </div>
              {error && (
                 <motion.p 
                   initial={{ opacity: 0, y: 10 }} 
                   animate={{ opacity: 1, y: 0 }} 
-                  className="text-red-500 text-sm mt-4 text-center bg-red-50 py-2 px-4 rounded-full border border-red-100"
+                  className="text-red-500 text-sm mt-4 text-center bg-red-50 dark:bg-red-900/20 py-2 px-4 rounded-full border border-red-100 dark:border-red-900 flex-shrink-0"
                 >
                   {error}
                 </motion.p>
@@ -141,10 +142,10 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
             className="flex flex-col items-center gap-8 py-20"
           >
             <div className="relative">
-              <div className="absolute inset-0 bg-gray-200 rounded-full blur-xl opacity-50 animate-pulse"></div>
+              <div className="absolute inset-0 bg-gray-200 dark:bg-stone-700 rounded-full blur-xl opacity-50 animate-pulse"></div>
               <Spinner />
             </div>
-            <span className="text-2xl font-serif text-gray-800 tracking-wide animate-pulse">Constructing Model...</span>
+            <span className="text-2xl font-serif text-gray-800 dark:text-stone-200 tracking-wide animate-pulse">Constructing Model...</span>
           </motion.div>
         )}
 
@@ -154,26 +155,26 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="flex flex-col items-center gap-8 w-full max-w-2xl"
+            className="flex flex-col items-center justify-center gap-6 w-full max-w-2xl h-full py-4"
           >
-             <div className="relative rounded-3xl overflow-hidden shadow-2xl bg-white p-4 border border-white">
+             <div className="relative rounded-3xl overflow-hidden shadow-2xl bg-white dark:bg-stone-900 p-2 border border-white dark:border-stone-800 flex-shrink-1 min-h-0">
                <img 
                  src={generatedModelUrl} 
                  alt="Generated Model" 
-                 className="w-full h-auto rounded-2xl max-h-[60vh] object-cover"
+                 className="w-auto h-auto max-h-[55vh] object-contain rounded-2xl"
                />
              </div>
              
-             <div className="flex items-center gap-4">
+             <div className="flex items-center gap-4 flex-shrink-0">
                 <button 
                   onClick={handleReset}
-                  className="px-8 py-4 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors"
+                  className="px-8 py-4 text-sm font-semibold text-gray-600 dark:text-stone-400 hover:text-gray-900 dark:hover:text-stone-100 transition-colors"
                 >
                   Retake
                 </button>
                 <button 
                   onClick={() => onModelFinalized(generatedModelUrl!)}
-                  className="px-10 py-4 text-sm font-semibold text-white bg-gray-900 rounded-full hover:bg-black transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+                  className="px-10 py-4 text-sm font-semibold text-white bg-gray-900 dark:bg-stone-100 dark:text-stone-950 rounded-full hover:bg-black dark:hover:bg-white transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
                 >
                   Enter Studio
                 </button>

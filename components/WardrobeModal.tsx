@@ -101,15 +101,15 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
 
   return (
     <div className="pt-2 pb-24 md:pb-6 relative min-h-[300px]">
-        <h2 className="text-2xl font-serif text-gray-900 mb-6 flex items-center justify-between">
+        <h2 className="text-2xl font-serif text-gray-900 dark:text-stone-100 mb-6 flex items-center justify-between">
             <span>Wardrobe</span>
-            <span className="text-xs font-sans text-gray-400 font-normal uppercase tracking-wider">Select Item</span>
+            <span className="text-xs font-sans text-gray-400 dark:text-stone-500 font-normal uppercase tracking-wider">Select Item</span>
         </h2>
         
         <div className="grid grid-cols-2 gap-4">
             {/* Upload Button */}
-             <label className={`aspect-[4/5] relative border border-dashed rounded-2xl flex flex-col items-center justify-center text-gray-400 transition-all duration-200 group ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:border-gray-900 hover:text-gray-900 cursor-pointer bg-gray-50 hover:bg-white'}`}>
-                <div className="bg-white p-3 rounded-full shadow-sm group-hover:scale-110 transition-transform">
+             <label className={`aspect-[4/5] relative border border-dashed rounded-2xl flex flex-col items-center justify-center text-gray-400 dark:text-stone-500 transition-all duration-200 group ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:border-gray-900 dark:hover:border-stone-400 hover:text-gray-900 dark:hover:text-stone-200 cursor-pointer bg-gray-50 dark:bg-stone-900 hover:bg-white dark:hover:bg-stone-800 border-gray-300 dark:border-stone-700'}`}>
+                <div className="bg-white dark:bg-stone-800 p-3 rounded-full shadow-sm group-hover:scale-110 transition-transform">
                     <PlusIcon className="w-5 h-5"/>
                 </div>
                 <span className="text-xs font-semibold mt-3">Add New</span>
@@ -125,7 +125,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
                 key={item.id}
                 onClick={() => handleItemClick(item)}
                 disabled={isLoading}
-                className={`relative aspect-[4/5] rounded-2xl overflow-hidden transition-all duration-300 group focus:outline-none disabled:opacity-70 disabled:grayscale ${isSelected ? 'ring-2 ring-gray-900 ring-offset-2' : ''}`}
+                className={`relative aspect-[4/5] rounded-2xl overflow-hidden transition-all duration-300 group focus:outline-none disabled:opacity-70 disabled:grayscale ${isSelected ? 'ring-2 ring-gray-900 dark:ring-stone-100 ring-offset-2 dark:ring-offset-stone-900' : ''}`}
                 >
                 <img src={item.url} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                 
@@ -152,7 +152,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
                     <button
                         onClick={handleTryOn}
                         disabled={isLoading || preparingItemId !== null}
-                        className="w-full bg-gray-900 text-white font-serif text-lg py-4 rounded-full shadow-xl hover:bg-black hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+                        className="w-full bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 font-serif text-lg py-4 rounded-full shadow-xl hover:bg-black dark:hover:bg-white hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
                     >
                         {preparingItemId ? (
                             <>
@@ -172,7 +172,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
              </div>
         )}
         
-        {error && <div className="mt-4 p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-xs font-medium">{error}</div>}
+        {error && <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900 text-red-600 dark:text-red-400 rounded-xl text-xs font-medium">{error}</div>}
     </div>
   );
 };
