@@ -124,11 +124,29 @@ const App: React.FC = () => {
   const handleGarmentSelect = useCallback(async (garmentFile: File, garmentInfo: WardrobeItem) => {
     if (!displayImageUrl || isLoading) return;
 
-    const nextLayer = outfitHistory[currentOutfitIndex + 1];
-    if (nextLayer && nextLayer.garment?.id === garmentInfo.id) {
-        setCurrentOutfitIndex(prev => prev + 1);
-        setCurrentPoseIndex(0); 
-        return;
+    // Check if the garment is already in the active stack (e.g. switching back to a previous layer)
+    const activeHistory = outfitHistory.slice(0, currentOutfitIndex + 1);
+    const existingIndex = activeHistory.findIndex(l => l.garment?.id === garmentInfo.id);
+
+    if (existingIndex !== -1) {
+        // If it's NOT the current one, it means we want to switch back to an underlying layer
+        if (existingIndex !== currentOutfitIndex) {
+             setCurrentOutfitIndex(existingIndex);
+             setCurrentPoseIndex(0);
+             if (isMobile) setIsSheetCollapsed(true);
+             return;
+        }
+        // If it IS the current one, we proceed to allow re-generation (Retry logic)
+        // by falling through to the generation code below.
+    } else {
+        // Check if it's in the immediate future (Redo logic) - only check if we aren't re-generating
+        const nextLayer = outfitHistory[currentOutfitIndex + 1];
+        if (nextLayer && nextLayer.garment?.id === garmentInfo.id) {
+            setCurrentOutfitIndex(prev => prev + 1);
+            setCurrentPoseIndex(0); 
+             if (isMobile) setIsSheetCollapsed(true);
+            return;
+        }
     }
 
     // Automatically collapse sheet on mobile to show the canvas loading state
@@ -150,6 +168,7 @@ const App: React.FC = () => {
       };
 
       setOutfitHistory(prevHistory => {
+        // Truncate future history if we generate something new (standard Undo/Redo behavior)
         const newHistory = prevHistory.slice(0, currentOutfitIndex + 1);
         return [...newHistory, newLayer];
       });
@@ -163,9 +182,6 @@ const App: React.FC = () => {
       });
     } catch (err) {
       setError(getFriendlyErrorMessage(err as any, 'Failed to apply garment'));
-      // If error, maybe re-expand sheet so they can see it? 
-      // But error is shown in the sheet, so leaving it collapsed might hide the error.
-      // Let's re-expand if error occurs on mobile
       if (isMobile) setIsSheetCollapsed(false);
     } finally {
       setIsLoading(false);
@@ -263,6 +279,8 @@ const App: React.FC = () => {
             exit="exit"
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
+            {/* Try on the Go branding removed from absolute position to avoid overlap */}
+
             {/* Main Canvas Area */}
             <main className="flex-grow relative h-full order-1 md:order-1">
               <Canvas 

@@ -15,28 +15,36 @@ interface WardrobePanelProps {
   wardrobe: WardrobeItem[];
 }
 
-const urlToFile = (url: string, filename: string): Promise<File> => {
-    return new Promise((resolve, reject) => {
-        const image = new Image();
-        image.setAttribute('crossOrigin', 'anonymous');
-        // Append timestamp to avoid cache-related CORS issues
-        const cacheBustedUrl = url.includes('?') ? `${url}&t=${Date.now()}` : `${url}?t=${Date.now()}`;
+const urlToFile = async (url: string, filename: string): Promise<File> => {
+    // Helper to fetch with specific options
+    const fetchBlob = async (urlToFetch: string): Promise<Blob> => {
+        const response = await fetch(urlToFetch, { 
+            mode: 'cors', 
+            credentials: 'omit' // Important for public resources to avoid strict CORS checks
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP Status: ${response.status}`);
+        }
+        return await response.blob();
+    };
+
+    try {
+        let blob: Blob;
+        try {
+            // Attempt 1: Try fetching the clean URL directly
+            blob = await fetchBlob(url);
+        } catch (firstError) {
+            console.warn("Direct fetch failed, retrying with cache buster...", firstError);
+            // Attempt 2: Try with cache busting to bypass browser cache
+            const cacheBustedUrl = url.includes('?') ? `${url}&t=${Date.now()}` : `${url}?t=${Date.now()}`;
+            blob = await fetchBlob(cacheBustedUrl);
+        }
         
-        image.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = image.naturalWidth;
-            canvas.height = image.naturalHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return reject(new Error('Could not get canvas context.'));
-            ctx.drawImage(image, 0, 0);
-            canvas.toBlob((blob) => {
-                if (!blob) return reject(new Error('Canvas toBlob failed.'));
-                resolve(new File([blob], filename, { type: blob.type || 'image/png' }));
-            }, 'image/png');
-        };
-        image.onerror = (error) => reject(new Error('Could not load image. It may have CORS restrictions.'));
-        image.src = cacheBustedUrl;
-    });
+        return new File([blob], filename, { type: blob.type || 'image/png' });
+    } catch (error) {
+        console.error("Image loading error:", error);
+        throw new Error('Could not load image. It may have CORS restrictions or the URL is inaccessible.');
+    }
 };
 
 const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGarmentIds, isLoading, wardrobe }) => {
@@ -46,7 +54,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     const handleItemClick = (item: WardrobeItem) => {
-        if (isLoading || activeGarmentIds.includes(item.id)) return;
+        if (isLoading) return; // Allow clicking even if active
         setSelectedItem(item);
         setSelectedFile(null); // Clear custom file if switching to preset
         setError(null);
@@ -116,7 +124,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
                 <button
                 key={item.id}
                 onClick={() => handleItemClick(item)}
-                disabled={isLoading || isActive}
+                disabled={isLoading}
                 className={`relative aspect-[4/5] rounded-2xl overflow-hidden transition-all duration-300 group focus:outline-none disabled:opacity-70 disabled:grayscale ${isSelected ? 'ring-2 ring-gray-900 ring-offset-2' : ''}`}
                 >
                 <img src={item.url} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
@@ -126,9 +134,9 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
                     <p className="text-white text-sm font-medium">{item.name}</p>
                 </div>
 
-                {/* Active (Worn) State */}
+                {/* Active (Worn) State Indicator */}
                 {isActive && (
-                    <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-[2px] flex items-center justify-center z-20">
+                    <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-[2px] flex items-center justify-center z-20 group-hover:bg-gray-900/40 transition-colors">
                         <CheckCircleIcon className="w-8 h-8 text-white drop-shadow-md" />
                     </div>
                 )}
@@ -154,7 +162,9 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
                         ) : (
                             <>
                                 <ShirtIcon className="w-5 h-5" />
-                                <span>Try On {selectedItem.name}</span>
+                                <span>
+                                    {activeGarmentIds.includes(selectedItem.id) ? 'Try Again' : `Try On ${selectedItem.name}`}
+                                </span>
                             </>
                         )}
                     </button>
