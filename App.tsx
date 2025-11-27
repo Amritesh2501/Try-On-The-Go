@@ -10,7 +10,7 @@ import StartScreen from './components/StartScreen';
 import Canvas from './components/Canvas';
 import WardrobePanel from './components/WardrobeModal';
 import OutfitStack from './components/OutfitStack';
-import { generateVirtualTryOnImage, generatePoseVariation } from './services/geminiService';
+import { generateVirtualTryOnImage, generatePoseVariation, generateSceneVariation } from './services/geminiService';
 import { OutfitLayer, WardrobeItem } from './types';
 import { defaultWardrobe } from './wardrobe';
 import Footer from './components/Footer';
@@ -43,6 +43,16 @@ const useMediaQuery = (query: string): boolean => {
   return matches;
 };
 
+// Helper to convert File to Base64 for persistence
+const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
+    });
+};
+
 
 const App: React.FC = () => {
   const [showInitialLoader, setShowInitialLoader] = useState(true);
@@ -56,8 +66,29 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [currentPoseIndex, setCurrentPoseIndex] = useState(0);
   const [isSheetCollapsed, setIsSheetCollapsed] = useState(false);
-  const [wardrobe, setWardrobe] = useState<WardrobeItem[]>(defaultWardrobe);
+  const [currentScene, setCurrentScene] = useState("Studio");
+  
+  // Initialize Wardrobe from LocalStorage if available, else default
+  const [wardrobe, setWardrobe] = useState<WardrobeItem[]>(() => {
+    try {
+        const saved = localStorage.getItem('wardrobe_v1');
+        return saved ? JSON.parse(saved) : defaultWardrobe;
+    } catch (e) {
+        console.warn("Failed to parse wardrobe from local storage, resetting to default.", e);
+        return defaultWardrobe;
+    }
+  });
+  
   const isMobile = useMediaQuery('(max-width: 767px)');
+
+  // Persist Wardrobe changes
+  useEffect(() => {
+    try {
+        localStorage.setItem('wardrobe_v1', JSON.stringify(wardrobe));
+    } catch (e) {
+        console.error("Failed to save wardrobe to local storage (likely quota exceeded).", e);
+    }
+  }, [wardrobe]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -109,6 +140,7 @@ const App: React.FC = () => {
     setLoadingMessage('');
     setError(null);
     setCurrentPoseIndex(0);
+    setCurrentScene("Studio");
   };
 
   const handleFullReset = () => {
@@ -117,6 +149,7 @@ const App: React.FC = () => {
     setOutfitHistory([]);
     setCurrentOutfitIndex(0);
     setWardrobe(defaultWardrobe);
+    localStorage.removeItem('wardrobe_v1');
   };
 
   const handleGarmentSelect = useCallback(async (garmentFile: File, garmentInfo: WardrobeItem) => {
@@ -127,17 +160,13 @@ const App: React.FC = () => {
     const existingIndex = activeHistory.findIndex(l => l.garment?.id === garmentInfo.id);
 
     if (existingIndex !== -1) {
-        // If it's NOT the current one, it means we want to switch back to an underlying layer
         if (existingIndex !== currentOutfitIndex) {
              setCurrentOutfitIndex(existingIndex);
              setCurrentPoseIndex(0);
              if (isMobile) setIsSheetCollapsed(true);
              return;
         }
-        // If it IS the current one, we proceed to allow re-generation (Retry logic)
-        // by falling through to the generation code below.
     } else {
-        // Check if it's in the immediate future (Redo logic) - only check if we aren't re-generating
         const nextLayer = outfitHistory[currentOutfitIndex + 1];
         if (nextLayer && nextLayer.garment?.id === garmentInfo.id) {
             setCurrentOutfitIndex(prev => prev + 1);
@@ -147,7 +176,6 @@ const App: React.FC = () => {
         }
     }
 
-    // Automatically collapse sheet on mobile to show the canvas loading state
     if (isMobile) {
       setIsSheetCollapsed(true);
     }
@@ -166,31 +194,67 @@ const App: React.FC = () => {
       };
 
       setOutfitHistory(prevHistory => {
-        // Truncate future history if we generate something new (standard Undo/Redo behavior)
         const newHistory = prevHistory.slice(0, currentOutfitIndex + 1);
         return [...newHistory, newLayer];
       });
       setCurrentOutfitIndex(prev => prev + 1);
       
-      setWardrobe(prev => {
-        if (prev.find(item => item.id === garmentInfo.id)) {
-            return prev;
+      // Update Wardrobe Persistence: Ensure the item has a persistent URL (Base64) instead of Blob
+      const isNewItem = !wardrobe.find(item => item.id === garmentInfo.id);
+      if (isNewItem) {
+        try {
+            const base64Url = await fileToBase64(garmentFile);
+            const persistentItem = { ...garmentInfo, url: base64Url };
+            setWardrobe(prev => {
+                 if (prev.find(i => i.id === persistentItem.id)) return prev;
+                 return [...prev, persistentItem];
+            });
+        } catch (e) {
+            console.error("Failed to convert image to base64 for persistence", e);
         }
-        return [...prev, garmentInfo];
-      });
+      }
+
     } catch (err) {
-      setError(getFriendlyErrorMessage(err as any, 'Failed to apply garment'));
+      setError(getFriendlyErrorMessage(err, 'Failed to apply garment'));
       if (isMobile) setIsSheetCollapsed(false);
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
     }
-  }, [displayImageUrl, isLoading, currentPoseIndex, outfitHistory, currentOutfitIndex, isMobile]);
+  }, [displayImageUrl, isLoading, currentPoseIndex, outfitHistory, currentOutfitIndex, isMobile, wardrobe]);
 
-  const handleRemoveLastGarment = () => {
+  const handleUndo = useCallback(() => {
     if (currentOutfitIndex > 0) {
-      setCurrentOutfitIndex(prevIndex => prevIndex - 1);
-      setCurrentPoseIndex(0); 
+      setCurrentOutfitIndex(prev => prev - 1);
+      setCurrentPoseIndex(0);
+    }
+  }, [currentOutfitIndex]);
+
+  const handleRedo = useCallback(() => {
+    if (currentOutfitIndex < outfitHistory.length - 1) {
+      setCurrentOutfitIndex(prev => prev + 1);
+      setCurrentPoseIndex(0);
+    }
+  }, [currentOutfitIndex, outfitHistory.length]);
+
+  const handleRemoveWardrobeItem = (itemId: string) => {
+    setWardrobe(prev => prev.filter(item => item.id !== itemId));
+  };
+
+  const handleRemoveLayer = (index: number) => {
+    if (index === 0) {
+        setError("Cannot remove the base model. Please start over to change the model.");
+        return;
+    }
+    // Remove from history
+    setOutfitHistory(prev => {
+        const newHistory = [...prev];
+        newHistory.splice(index, 1);
+        return newHistory;
+    });
+    // Adjust current index if the removed item was before or at the current index
+    if (currentOutfitIndex >= index) {
+        setCurrentOutfitIndex(Math.max(0, currentOutfitIndex - 1));
     }
   };
   
@@ -224,7 +288,7 @@ const App: React.FC = () => {
         return newHistory;
       });
     } catch (err) {
-      setError(getFriendlyErrorMessage(err as any, 'Failed to change pose'));
+      setError(getFriendlyErrorMessage(err, 'Failed to change pose'));
       setCurrentPoseIndex(prevPoseIndex);
     } finally {
       setIsLoading(false);
@@ -232,11 +296,47 @@ const App: React.FC = () => {
     }
   }, [currentPoseIndex, outfitHistory, isLoading, currentOutfitIndex]);
 
+  const handleSceneSelect = useCallback(async (scene: string) => {
+      if (isLoading || !displayImageUrl || scene === currentScene) return;
+      
+      setError(null);
+      setIsLoading(true);
+      setLoadingMessage(`Transporting to ${scene}...`);
+      
+      try {
+          const newImageUrl = await generateSceneVariation(displayImageUrl, scene);
+          
+          setOutfitHistory(prevHistory => {
+              const newHistory = [...prevHistory];
+              if (currentOutfitIndex >= newHistory.length) return prevHistory;
+
+              const updatedLayer = { ...newHistory[currentOutfitIndex] };
+              const currentPose = POSE_INSTRUCTIONS[currentPoseIndex];
+              updatedLayer.poseImages = {
+                  ...updatedLayer.poseImages,
+                  [currentPose]: newImageUrl
+              };
+              newHistory[currentOutfitIndex] = updatedLayer;
+              return newHistory;
+          });
+          setCurrentScene(scene);
+
+      } catch (err) {
+          setError(getFriendlyErrorMessage(err, 'Failed to change scene'));
+      } finally {
+          setIsLoading(false);
+          setLoadingMessage('');
+      }
+  }, [displayImageUrl, isLoading, currentScene, currentOutfitIndex, currentPoseIndex]);
+
   const pageVariants = {
     initial: { opacity: 0, y: 20 },
     animate: { opacity: 1, y: 0 },
     exit: { opacity: 0, y: -20 },
   };
+
+  const canUndo = currentOutfitIndex > 0;
+  const canRedo = currentOutfitIndex < outfitHistory.length - 1;
 
   return (
     <div className="font-sans bg-[#FAFAF9] dark:bg-stone-950 w-full h-full text-gray-900 dark:text-stone-50 selection:bg-gray-200 dark:selection:bg-stone-800 transition-colors duration-300 overflow-hidden">
@@ -256,7 +356,6 @@ const App: React.FC = () => {
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
             <Header />
-            {/* Added relative and overflow-hidden to ensure main content scales correctly without scrolling */}
             <main className="flex-grow flex items-center justify-center w-full h-full relative overflow-hidden pt-16 pb-12">
                 <StartScreen 
                   onModelFinalized={handleModelFinalized} 
@@ -289,6 +388,8 @@ const App: React.FC = () => {
                 poseInstructions={POSE_INSTRUCTIONS}
                 currentPoseIndex={currentPoseIndex}
                 availablePoseKeys={availablePoseKeys}
+                onSceneSelect={handleSceneSelect}
+                currentScene={currentScene}
               />
             </main>
 
@@ -314,7 +415,11 @@ const App: React.FC = () => {
                   
                   <OutfitStack 
                     outfitHistory={activeOutfitLayers}
-                    onRemoveLastGarment={handleRemoveLastGarment}
+                    onRemoveLayer={handleRemoveLayer}
+                    onUndo={handleUndo}
+                    onRedo={handleRedo}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
                   />
                   
                   <WardrobePanel
@@ -322,6 +427,7 @@ const App: React.FC = () => {
                     activeGarmentIds={activeGarmentIds}
                     isLoading={isLoading}
                     wardrobe={wardrobe}
+                    onRemoveGarment={handleRemoveWardrobeItem}
                   />
                 </div>
             </aside>

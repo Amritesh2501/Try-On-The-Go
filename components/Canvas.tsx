@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState } from 'react';
-import { ChevronLeftIcon, RotateCcwIcon } from './icons';
+import { ChevronLeftIcon, RotateCcwIcon, DownloadIcon, ImageIcon } from './icons';
 import Spinner from './Spinner';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -17,10 +17,42 @@ interface CanvasProps {
   poseInstructions: string[];
   currentPoseIndex: number;
   availablePoseKeys: string[];
+  onSceneSelect: (scene: string) => void;
+  currentScene: string;
 }
 
-const Canvas: React.FC<CanvasProps> = ({ displayImageUrl, onBack, isLoading, loadingMessage, onSelectPose, poseInstructions, currentPoseIndex, availablePoseKeys }) => {
-  const [isHovering, setIsHovering] = useState(false);
+const SCENE_OPTIONS = [
+    { label: "Studio", value: "Studio" },
+    { label: "Coffee Shop", value: "Cozy Coffee Shop" },
+    { label: "Urban Street", value: "City Street, Daytime" },
+    { label: "Beach", value: "Tropical Beach" },
+    { label: "Office", value: "Modern Office Interior" }
+];
+
+const Canvas: React.FC<CanvasProps> = ({ 
+    displayImageUrl, 
+    onBack, 
+    isLoading, 
+    loadingMessage, 
+    onSelectPose, 
+    poseInstructions, 
+    currentPoseIndex, 
+    onSceneSelect,
+    currentScene
+}) => {
+  const [showSceneMenu, setShowSceneMenu] = useState(false);
+
+  const handleDownload = () => {
+    if (!displayImageUrl) return;
+    
+    // Create a temporary link
+    const link = document.createElement('a');
+    link.href = displayImageUrl;
+    link.download = `try-on-the-go-${Date.now()}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   
   return (
     <div className="w-full h-full flex items-center justify-center p-4 md:p-8 relative">
@@ -34,11 +66,57 @@ const Canvas: React.FC<CanvasProps> = ({ displayImageUrl, onBack, isLoading, loa
           <span className="font-medium text-sm">Exit Studio</span>
       </button>
 
+      {/* Top Right Actions */}
+      <div className="absolute top-6 right-6 z-30 flex gap-2">
+         {/* Scene Toggle */}
+         <div className="relative">
+             <button
+                onClick={() => setShowSceneMenu(!showSceneMenu)}
+                disabled={isLoading}
+                className={`p-3 rounded-full backdrop-blur-md border shadow-sm transition-all ${showSceneMenu ? 'bg-gray-900 text-white dark:bg-stone-100 dark:text-stone-900 border-transparent' : 'bg-white/50 dark:bg-stone-900/50 border-white/40 dark:border-stone-700 text-gray-700 dark:text-stone-200 hover:bg-white dark:hover:bg-stone-900'}`}
+                title="Change Scene"
+             >
+                 <ImageIcon className="w-5 h-5" />
+             </button>
+             <AnimatePresence>
+                {showSceneMenu && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                        className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-stone-900 rounded-2xl shadow-xl border border-gray-100 dark:border-stone-800 overflow-hidden py-1 z-40"
+                    >
+                        {SCENE_OPTIONS.map((scene) => (
+                            <button
+                                key={scene.value}
+                                onClick={() => {
+                                    onSceneSelect(scene.value);
+                                    setShowSceneMenu(false);
+                                }}
+                                className={`w-full text-left px-4 py-3 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-stone-800 ${currentScene === scene.value ? 'font-semibold text-gray-900 dark:text-stone-100 bg-gray-50 dark:bg-stone-800' : 'text-gray-600 dark:text-stone-400'}`}
+                            >
+                                {scene.label}
+                            </button>
+                        ))}
+                    </motion.div>
+                )}
+             </AnimatePresence>
+         </div>
+
+         {/* Download */}
+         <button
+            onClick={handleDownload}
+            disabled={isLoading}
+            className="p-3 rounded-full bg-white/50 dark:bg-stone-900/50 backdrop-blur-md border border-white/40 dark:border-stone-700 shadow-sm text-gray-700 dark:text-stone-200 hover:bg-white dark:hover:bg-stone-900 transition-all"
+            title="Download Image"
+         >
+             <DownloadIcon className="w-5 h-5" />
+         </button>
+      </div>
+
       {/* Main Image Display */}
       <div 
         className="relative w-full h-full flex items-center justify-center"
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={() => setIsHovering(false)}
       >
         <AnimatePresence mode="wait">
         {displayImageUrl ? (
@@ -47,12 +125,12 @@ const Canvas: React.FC<CanvasProps> = ({ displayImageUrl, onBack, isLoading, loa
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
-            className="relative h-full max-h-[85vh] w-auto aspect-auto rounded-2xl overflow-hidden shadow-2xl ring-1 ring-black/5 dark:ring-white/5"
+            className="relative h-full max-h-[85vh] w-auto aspect-auto rounded-2xl overflow-hidden shadow-2xl ring-1 ring-black/5 dark:ring-white/5 bg-white dark:bg-stone-900"
           >
             <img
-              src={displayImageUrl}
-              alt="Virtual try-on model"
-              className="h-full w-full object-contain bg-white dark:bg-stone-900"
+                src={displayImageUrl}
+                alt="Virtual try-on model"
+                className="h-full w-full object-contain"
             />
           </motion.div>
         ) : (

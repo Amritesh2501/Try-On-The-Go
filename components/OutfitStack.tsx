@@ -6,14 +6,18 @@
 
 import React from 'react';
 import { OutfitLayer } from '../types';
-import { Trash2Icon } from './icons';
+import { Trash2Icon, RotateCcwIcon, RotateCwIcon } from './icons';
 
 interface OutfitStackProps {
   outfitHistory: OutfitLayer[];
-  onRemoveLastGarment: () => void;
+  onRemoveLayer: (index: number) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
-const OutfitStack: React.FC<OutfitStackProps> = ({ outfitHistory, onRemoveLastGarment }) => {
+const OutfitStack: React.FC<OutfitStackProps> = ({ outfitHistory, onRemoveLayer, onUndo, onRedo, canUndo, canRedo }) => {
   const getLayerThumbnail = (layer: OutfitLayer) => {
     if (layer.garment) {
       return layer.garment.url;
@@ -26,8 +30,29 @@ const OutfitStack: React.FC<OutfitStackProps> = ({ outfitHistory, onRemoveLastGa
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-between mb-4 border-b border-gray-100 dark:border-stone-800 pb-4">
-        <h2 className="text-2xl font-serif text-gray-900 dark:text-stone-100">Current Look</h2>
-        <span className="text-xs font-medium text-gray-400 dark:text-stone-500 bg-gray-100 dark:bg-stone-800 px-2 py-1 rounded-full">{outfitHistory.length} Layers</span>
+        <div className="flex items-center gap-3">
+             <h2 className="text-2xl font-serif text-gray-900 dark:text-stone-100">Current Look</h2>
+             <span className="text-xs font-medium text-gray-400 dark:text-stone-500 bg-gray-100 dark:bg-stone-800 px-2 py-1 rounded-full">{outfitHistory.length} Layers</span>
+        </div>
+        
+        <div className="flex items-center gap-1">
+            <button 
+                onClick={onUndo} 
+                disabled={!canUndo}
+                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-stone-800 text-gray-500 dark:text-stone-400 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                aria-label="Undo"
+            >
+                <RotateCcwIcon className="w-5 h-5" />
+            </button>
+            <button 
+                onClick={onRedo} 
+                disabled={!canRedo}
+                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-stone-800 text-gray-500 dark:text-stone-400 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                aria-label="Redo"
+            >
+                <RotateCwIcon className="w-5 h-5" />
+            </button>
+        </div>
       </div>
       
       <div className="space-y-3">
@@ -36,7 +61,7 @@ const OutfitStack: React.FC<OutfitStackProps> = ({ outfitHistory, onRemoveLastGa
           
           return (
             <div
-              key={layer.garment?.id || 'base'}
+              key={layer.garment?.id || `base-${index}`}
               className="group flex items-center justify-between bg-white dark:bg-stone-900 p-3 rounded-xl border border-gray-100 dark:border-stone-800 shadow-sm transition-all hover:shadow-md hover:border-gray-200 dark:hover:border-stone-700"
             >
               <div className="flex items-center overflow-hidden">
@@ -64,9 +89,10 @@ const OutfitStack: React.FC<OutfitStackProps> = ({ outfitHistory, onRemoveLastGa
                   </div>
               </div>
               
-              {index > 0 && index === outfitHistory.length - 1 && (
+              {/* Allow removal of any layer except the first (base) one */}
+              {index > 0 && (
                  <button
-                  onClick={onRemoveLastGarment}
+                  onClick={() => onRemoveLayer(index)}
                   className="opacity-0 group-hover:opacity-100 transition-opacity p-2 text-gray-400 dark:text-stone-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
                   aria-label={`Remove ${layer.garment?.name}`}
                 >

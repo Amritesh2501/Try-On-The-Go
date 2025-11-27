@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PlusIcon } from './icons';
+import { PlusIcon, CameraIcon, XIcon } from './icons';
 import { generateModelImage } from '../services/geminiService';
 import Spinner from './Spinner';
 import { getFriendlyErrorMessage } from '../lib/utils';
@@ -22,6 +22,8 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isHovering, setIsHovering] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (initialImage) {
@@ -58,7 +60,61 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
     setGeneratedModelUrl(null);
     setIsGenerating(false);
     setError(null);
+    setIsCameraOpen(false);
     if (onReset) onReset();
+  };
+
+  const startCamera = async () => {
+    try {
+        setError(null);
+        // Request camera stream
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'user' } 
+        });
+        setIsCameraOpen(true);
+        // Small delay to ensure video element is rendered
+        setTimeout(() => {
+             if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+            }
+        }, 100);
+    } catch (err) {
+        console.error(err);
+        setError("Could not access camera. Please check permissions.");
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
+    }
+    setIsCameraOpen(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current) {
+        const video = videoRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            // Flip horizontal if user facing (mirror effect)
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0);
+            
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const file = new File([blob], "camera-photo.jpg", { type: "image/jpeg" });
+                    stopCamera();
+                    handleFileSelect(file);
+                }
+            }, 'image/jpeg', 0.95);
+        }
+    }
   };
 
   const containerVariants = {
@@ -86,7 +142,7 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
         exit="exit"
       >
         {/* Header Text - Flexible height, shrinks if needed */}
-        {!generatedModelUrl && !isGenerating && (
+        {!generatedModelUrl && !isGenerating && !isCameraOpen && (
           <motion.div variants={itemVariants} className="text-center mb-6 md:mb-12 flex-shrink-0 z-10">
             <h1 className="text-4xl md:text-7xl font-serif text-gray-900 dark:text-stone-50 mb-4 leading-tight">
               Virtual <br className="hidden md:block" />
@@ -99,7 +155,7 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
         )}
 
         {/* State 1: Upload (Initial) */}
-        {!isGenerating && !generatedModelUrl && (
+        {!isGenerating && !generatedModelUrl && !isCameraOpen && (
           <motion.div variants={itemVariants} className="w-full max-w-md flex-shrink-1 min-h-0 flex flex-col items-center justify-center">
              <div 
                 className={`relative w-full aspect-[4/5] md:aspect-square max-h-[50vh] bg-white dark:bg-stone-900 rounded-3xl border-2 transition-all duration-300 ease-out flex flex-col items-center justify-center gap-6 group overflow-hidden shadow-sm hover:shadow-xl ${isHovering ? 'border-gray-900 dark:border-stone-500 scale-[1.02]' : 'border-dashed border-gray-300 dark:border-stone-700'}`}
@@ -121,6 +177,17 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
                     <span className="block font-serif text-2xl text-gray-900 dark:text-stone-100 mb-2">Upload your photo</span>
                     <span className="text-sm text-gray-500 dark:text-stone-500 font-medium">Drag & drop or click to browse</span>
                 </div>
+                
+                {/* Camera Button placed inside but with higher z-index to be clickable */}
+                <div className="absolute bottom-6 z-30 pointer-events-auto">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); startCamera(); }}
+                        className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-stone-800 hover:bg-gray-200 dark:hover:bg-stone-700 rounded-full text-sm font-medium text-gray-700 dark:text-stone-300 transition-colors"
+                    >
+                        <CameraIcon className="w-4 h-4" />
+                        <span>Use Camera</span>
+                    </button>
+                </div>
              </div>
              {error && (
                 <motion.p 
@@ -132,6 +199,47 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
                 </motion.p>
              )}
           </motion.div>
+        )}
+
+        {/* State 1b: Camera View */}
+        {isCameraOpen && (
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-md aspect-[4/5] md:aspect-square max-h-[50vh] relative bg-black rounded-3xl overflow-hidden shadow-2xl"
+            >
+                <video 
+                    ref={videoRef}
+                    autoPlay 
+                    playsInline 
+                    muted
+                    className="w-full h-full object-cover transform -scale-x-100" // Mirror effect
+                />
+                
+                <div className="absolute inset-0 pointer-events-none border border-white/20 rounded-3xl z-10"></div>
+                
+                {/* Camera Controls */}
+                <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-8 z-20">
+                     <button
+                        onClick={stopCamera}
+                        className="p-3 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-full text-white transition-colors"
+                        aria-label="Close Camera"
+                     >
+                         <XIcon className="w-6 h-6" />
+                     </button>
+                     
+                     <button
+                        onClick={capturePhoto}
+                        className="p-1 rounded-full border-4 border-white/80 hover:scale-105 transition-transform"
+                        aria-label="Capture Photo"
+                     >
+                        <div className="w-14 h-14 bg-white rounded-full"></div>
+                     </button>
+                     
+                     <div className="w-12"></div> {/* Spacer to center the capture button */}
+                </div>
+            </motion.div>
         )}
 
         {/* State 2: Generating */}

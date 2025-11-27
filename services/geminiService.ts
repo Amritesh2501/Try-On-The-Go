@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -122,6 +123,32 @@ export const generatePoseVariation = async (tryOnImageUrl: string, poseInstructi
     const response = await ai.models.generateContent({
         model,
         contents: { parts: [tryOnImagePart, { text: prompt }] },
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+            systemInstruction
+        },
+    });
+    return handleApiResponse(response);
+};
+
+export const generateSceneVariation = async (currentImageUrl: string, sceneDescription: string): Promise<string> => {
+    const imagePart = dataUrlToPart(currentImageUrl);
+    
+    const systemInstruction = "You are an expert digital artist. Your goal is to change the background of an image while preserving the foreground subject exactly.";
+
+    const prompt = `Change the background of this image.
+    
+    Target Scene: "${sceneDescription}".
+    
+    Instructions:
+    1. Keep the person (model) and their clothing EXACTLY as they appear in the original image. Do not change their pose, lighting on the body, or facial features.
+    2. Replace the current background with a high-quality, photorealistic representation of the Target Scene.
+    3. Ensure the lighting of the background matches the lighting of the subject realistically.
+    4. Return ONLY the final image.`;
+
+    const response = await ai.models.generateContent({
+        model,
+        contents: { parts: [imagePart, { text: prompt }] },
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
             systemInstruction
