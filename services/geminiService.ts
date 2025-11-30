@@ -42,6 +42,10 @@ const handleApiResponse = (response: GenerateContentResponse): string => {
         const imagePart = candidate.content?.parts?.find(part => part.inlineData);
         if (imagePart?.inlineData) {
             const { mimeType, data } = imagePart.inlineData;
+            // Validate data length to prevent empty images
+            if (!data || data.length === 0) {
+                continue;
+            }
             return `data:${mimeType};base64,${data}`;
         }
     }

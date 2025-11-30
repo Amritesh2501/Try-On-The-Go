@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -185,7 +184,7 @@ const App: React.FC = () => {
     setLoadingMessage(`Adding ${garmentInfo.name}...`);
 
     try {
-      const newImageUrl = await generateVirtualTryOnImage(displayImageUrl, garmentFile);
+      const newImageUrl = await generateVirtualTryOnImage(displayImageUrl as string, garmentFile);
       const currentPoseInstruction = POSE_INSTRUCTIONS[currentPoseIndex];
       
       const newLayer: OutfitLayer = { 
@@ -215,7 +214,7 @@ const App: React.FC = () => {
       }
 
     } catch (err) {
-      setError(getFriendlyErrorMessage(err, 'Failed to apply garment'));
+      setError(getFriendlyErrorMessage(err as any, 'Failed to apply garment'));
       if (isMobile) setIsSheetCollapsed(false);
     } finally {
       setIsLoading(false);
@@ -288,7 +287,7 @@ const App: React.FC = () => {
         return newHistory;
       });
     } catch (err) {
-      setError(getFriendlyErrorMessage(err, 'Failed to change pose'));
+      setError(getFriendlyErrorMessage(err as any, 'Failed to change pose'));
       setCurrentPoseIndex(prevPoseIndex);
     } finally {
       setIsLoading(false);
@@ -304,25 +303,24 @@ const App: React.FC = () => {
       setLoadingMessage(`Transporting to ${scene}...`);
       
       try {
-          const newImageUrl = await generateSceneVariation(displayImageUrl, scene);
+          const newImageUrl = await generateSceneVariation(displayImageUrl as string, scene);
           
           setOutfitHistory(prevHistory => {
               const newHistory = [...prevHistory];
               if (currentOutfitIndex >= newHistory.length) return prevHistory;
 
               const updatedLayer = { ...newHistory[currentOutfitIndex] };
+              // Create shallow copy of poseImages
+              updatedLayer.poseImages = { ...updatedLayer.poseImages };
               const currentPose = POSE_INSTRUCTIONS[currentPoseIndex];
-              updatedLayer.poseImages = {
-                  ...updatedLayer.poseImages,
-                  [currentPose]: newImageUrl
-              };
+              updatedLayer.poseImages[currentPose] = newImageUrl;
               newHistory[currentOutfitIndex] = updatedLayer;
               return newHistory;
           });
           setCurrentScene(scene);
 
       } catch (err) {
-          setError(getFriendlyErrorMessage(err, 'Failed to change scene'));
+          setError(getFriendlyErrorMessage(err as any, 'Failed to change scene'));
       } finally {
           setIsLoading(false);
           setLoadingMessage('');

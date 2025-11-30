@@ -1,3 +1,5 @@
+
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -215,7 +217,7 @@ export const Compare = ({
                 alt="first image"
                 src={firstImage}
                 className={cn(
-                  "absolute inset-0  z-20 rounded-2xl shrink-0 w-full h-full select-none object-cover",
+                  "absolute inset-0  z-20 rounded-2xl shrink-0 w-full h-full select-none object-contain object-top",
                   firstImageClassName
                 )}
                 draggable={false}
@@ -229,7 +231,7 @@ export const Compare = ({
         {secondImage ? (
           <motion.img
             className={cn(
-              "absolute top-0 left-0 z-[19]  rounded-2xl w-full h-full select-none object-cover",
+              "absolute top-0 left-0 z-[19]  rounded-2xl w-full h-full select-none object-contain object-top",
               secondImageClassname
             )}
             alt="second image"
