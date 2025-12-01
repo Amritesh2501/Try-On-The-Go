@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,9 +6,10 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PlusIcon, CameraIcon, XIcon, ChevronLeftIcon, ImageIcon, CheckCircleIcon, ChevronRightIcon, DownloadIcon } from './icons';
-import { generateModelImage, generateVirtualTryOnImage } from '../services/geminiService';
+import { PlusIcon, CameraIcon, XIcon, ChevronLeftIcon, ImageIcon, CheckCircleIcon, ChevronRightIcon, DownloadIcon, SparklesIcon } from './icons';
+import { generateModelImage, generateVirtualTryOnImage, generateStyleAdvice } from '../services/geminiService';
 import Spinner from './Spinner';
+import ProcessingLoader from './ProcessingLoader';
 import { getFriendlyErrorMessage } from '../lib/utils';
 import { Compare } from './ui/compare';
 
@@ -19,8 +19,18 @@ interface StartScreenProps {
   onReset?: () => void;
 }
 
-type AppMode = 'selection' | 'try-on' | 'compare';
+type AppMode = 'selection' | 'try-on' | 'compare' | 'style-advisor';
 type CompareStep = 'upload-base' | 'upload-garments' | 'generating' | 'choose-view' | 'result';
+
+// Helper to convert File to Base64 for API calls
+const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
+    });
+};
 
 const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImage, onReset }) => {
   const [mode, setMode] = useState<AppMode>('selection');
@@ -45,6 +55,13 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
   const [compareResult1, setCompareResult1] = useState<string | null>(null);
   const [compareResult2, setCompareResult2] = useState<string | null>(null);
   const [compareLoadingMsg, setCompareLoadingMsg] = useState("");
+
+  // Style Advisor State
+  const [advisorFile, setAdvisorFile] = useState<File | null>(null);
+  const [advisorPreview, setAdvisorPreview] = useState<string | null>(null);
+  const [advisorResult, setAdvisorResult] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isAdvisorCameraOpen, setIsAdvisorCameraOpen] = useState(false);
 
   useEffect(() => {
     if (initialImage) {
@@ -220,6 +237,97 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
       setError(null);
   };
 
+  // --- Style Advisor Handlers ---
+  const handleAdvisorFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+          const file = e.target.files[0];
+          handleAdvisorFileSelect(file);
+      }
+  };
+
+  const handleAdvisorFileSelect = (file: File) => {
+    setAdvisorFile(file);
+    setAdvisorPreview(URL.createObjectURL(file));
+  };
+
+  const startAdvisorCamera = async () => {
+    try {
+        setError(null);
+        // Request camera stream
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'user' } 
+        });
+        setIsAdvisorCameraOpen(true);
+        setTimeout(() => {
+             if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+            }
+        }, 100);
+    } catch (err) {
+        console.error(err);
+        setError("Could not access camera. Please check permissions.");
+    }
+  };
+
+  const stopAdvisorCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
+    }
+    setIsAdvisorCameraOpen(false);
+  };
+
+  const captureAdvisorPhoto = () => {
+    if (videoRef.current) {
+        const video = videoRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            // Flip horizontal if user facing (mirror effect)
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0);
+            
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const file = new File([blob], "advisor-photo.jpg", { type: "image/jpeg" });
+                    stopAdvisorCamera();
+                    handleAdvisorFileSelect(file);
+                }
+            }, 'image/jpeg', 0.95);
+        }
+    }
+  };
+
+
+  const executeStyleAnalysis = async () => {
+      if (!advisorFile) return;
+      
+      setIsAnalyzing(true);
+      setError(null);
+      try {
+          const base64Image = await fileToBase64(advisorFile);
+          const advice = await generateStyleAdvice(base64Image);
+          setAdvisorResult(advice);
+      } catch (err) {
+          setError(getFriendlyErrorMessage(err as any, "Style analysis failed"));
+      } finally {
+          setIsAnalyzing(false);
+      }
+  };
+
+  const resetAdvisor = () => {
+      setAdvisorFile(null);
+      setAdvisorPreview(null);
+      setAdvisorResult(null);
+      setError(null);
+      setIsAdvisorCameraOpen(false);
+  };
+
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: { 
@@ -240,64 +348,271 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
           <AnimatePresence mode="wait">
               <motion.div
                   key="selection"
-                  className="w-full h-full flex flex-col items-center justify-center px-6"
+                  className="w-full h-full flex flex-col items-center px-6 overflow-y-auto no-scrollbar"
                   variants={containerVariants}
                   initial="hidden"
                   animate="visible"
                   exit="exit"
               >
-                  <motion.div variants={itemVariants} className="text-center mb-12">
-                      <h1 className="text-4xl md:text-6xl font-serif text-gray-900 dark:text-stone-50 mb-4">
-                          Welcome to Studio
-                      </h1>
-                      <p className="text-gray-500 dark:text-stone-400 font-sans text-lg">
-                          Choose your experience
-                      </p>
-                  </motion.div>
+                  <div className="w-full max-w-6xl flex flex-col items-center gap-6 py-4 my-auto">
+                    <motion.div variants={itemVariants} className="text-center flex-shrink-0">
+                        <h1 className="text-3xl md:text-6xl font-serif text-gray-900 dark:text-stone-50 mb-2">
+                            Welcome to Studio
+                        </h1>
+                        <p className="text-gray-500 dark:text-stone-400 font-sans text-sm md:text-lg">
+                            Choose your experience
+                        </p>
+                    </motion.div>
 
-                  <motion.div variants={itemVariants} className="flex flex-col md:flex-row gap-6 w-full max-w-3xl">
-                      {/* Option 1: AI Try On */}
-                      <button 
-                        onClick={() => setMode('try-on')}
-                        className="flex-1 group relative overflow-hidden bg-white dark:bg-stone-900 rounded-3xl p-8 border-2 border-transparent hover:border-gray-200 dark:hover:border-stone-700 shadow-sm hover:shadow-xl transition-all duration-300 text-left"
-                      >
-                          <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                               <PlusIcon className="w-32 h-32" />
-                          </div>
-                          <div className="relative z-10">
-                              <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-stone-800 flex items-center justify-center mb-6 text-gray-900 dark:text-stone-100">
-                                  <CameraIcon className="w-6 h-6" />
-                              </div>
-                              <h3 className="text-2xl font-serif text-gray-900 dark:text-stone-50 mb-2">AI Virtual Try-On</h3>
-                              <p className="text-sm text-gray-500 dark:text-stone-400 leading-relaxed">
-                                  Create a digital twin and try on unlimited outfits using our generative AI engine.
-                              </p>
-                          </div>
-                      </button>
+                    <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 w-full px-2 md:px-0 flex-1 min-h-0">
+                        {/* Option 1: AI Try On */}
+                        <button 
+                            onClick={() => setMode('try-on')}
+                            className="group relative overflow-hidden bg-white dark:bg-stone-900 rounded-2xl p-5 md:p-8 border-2 border-transparent hover:border-gray-200 dark:hover:border-stone-700 shadow-sm hover:shadow-xl transition-all duration-300 text-left min-w-0 md:col-span-2 lg:col-span-1 h-full"
+                        >
+                            <div className="absolute -right-4 -bottom-4 md:top-0 md:right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <PlusIcon className="w-24 h-24 md:w-32 md:h-32" />
+                            </div>
+                            <div className="relative z-10 flex flex-row md:flex-col items-center md:items-start gap-4 md:gap-0 h-full justify-between">
+                                <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gray-100 dark:bg-stone-800 flex items-center justify-center md:mb-6 text-gray-900 dark:text-stone-100 shrink-0">
+                                    <CameraIcon className="w-5 h-5 md:w-6 md:h-6" />
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="text-lg md:text-2xl font-serif text-gray-900 dark:text-stone-50 mb-1 md:mb-2">AI Virtual Try-On</h3>
+                                    <p className="text-xs md:text-sm text-gray-500 dark:text-stone-400 leading-relaxed">
+                                        Create a digital twin and try on unlimited outfits.
+                                    </p>
+                                </div>
+                            </div>
+                        </button>
 
-                      {/* Option 2: Compare */}
-                      <button 
-                        onClick={() => setMode('compare')}
-                        className="flex-1 group relative overflow-hidden bg-white dark:bg-stone-900 rounded-3xl p-8 border-2 border-transparent hover:border-gray-200 dark:hover:border-stone-700 shadow-sm hover:shadow-xl transition-all duration-300 text-left"
-                      >
-                           <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                               <ImageIcon className="w-32 h-32" />
-                          </div>
-                          <div className="relative z-10">
-                              <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-stone-800 flex items-center justify-center mb-6 text-gray-900 dark:text-stone-100">
-                                  <div className="flex -space-x-2">
-                                    <div className="w-4 h-4 rounded-full bg-current opacity-50"></div>
-                                    <div className="w-4 h-4 rounded-full bg-current"></div>
-                                  </div>
-                              </div>
-                              <h3 className="text-2xl font-serif text-gray-900 dark:text-stone-50 mb-2">Compare Looks</h3>
-                              <p className="text-sm text-gray-500 dark:text-stone-400 leading-relaxed">
-                                  Compare two outfits side-by-side on your generated model.
-                              </p>
-                          </div>
-                      </button>
-                  </motion.div>
+                        {/* Option 2: Compare */}
+                        <button 
+                            onClick={() => setMode('compare')}
+                            className="group relative overflow-hidden bg-white dark:bg-stone-900 rounded-2xl p-5 md:p-8 border-2 border-transparent hover:border-gray-200 dark:hover:border-stone-700 shadow-sm hover:shadow-xl transition-all duration-300 text-left min-w-0 h-full"
+                        >
+                            <div className="absolute -right-4 -bottom-4 md:top-0 md:right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <ImageIcon className="w-24 h-24 md:w-32 md:h-32" />
+                            </div>
+                            <div className="relative z-10 flex flex-row md:flex-col items-center md:items-start gap-4 md:gap-0 h-full justify-between">
+                                <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gray-100 dark:bg-stone-800 flex items-center justify-center md:mb-6 text-gray-900 dark:text-stone-100 shrink-0">
+                                    <div className="flex -space-x-2">
+                                        <div className="w-3 h-3 md:w-4 md:h-4 rounded-full bg-current opacity-50"></div>
+                                        <div className="w-3 h-3 md:w-4 md:h-4 rounded-full bg-current"></div>
+                                    </div>
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="text-lg md:text-2xl font-serif text-gray-900 dark:text-stone-50 mb-1 md:mb-2">Compare Looks</h3>
+                                    <p className="text-xs md:text-sm text-gray-500 dark:text-stone-400 leading-relaxed">
+                                        Compare two outfits side-by-side.
+                                    </p>
+                                </div>
+                            </div>
+                        </button>
+
+                        {/* Option 3: Style Advisor */}
+                        <button 
+                            onClick={() => setMode('style-advisor')}
+                            className="group relative overflow-hidden bg-white dark:bg-stone-900 rounded-2xl p-5 md:p-8 border-2 border-transparent hover:border-gray-200 dark:hover:border-stone-700 shadow-sm hover:shadow-xl transition-all duration-300 text-left min-w-0 h-full"
+                        >
+                            <div className="absolute -right-4 -bottom-4 md:top-0 md:right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <SparklesIcon className="w-24 h-24 md:w-32 md:h-32" />
+                            </div>
+                            <div className="relative z-10 flex flex-row md:flex-col items-center md:items-start gap-4 md:gap-0 h-full justify-between">
+                                <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gray-100 dark:bg-stone-800 flex items-center justify-center md:mb-6 text-gray-900 dark:text-stone-100 shrink-0">
+                                    <SparklesIcon className="w-5 h-5 md:w-6 md:h-6" />
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="text-lg md:text-2xl font-serif text-gray-900 dark:text-stone-50 mb-1 md:mb-2">Style Advisor</h3>
+                                    <p className="text-xs md:text-sm text-gray-500 dark:text-stone-400 leading-relaxed">
+                                        Get instant fit ratings & style tips.
+                                    </p>
+                                </div>
+                            </div>
+                        </button>
+                    </motion.div>
+                  </div>
               </motion.div>
+          </AnimatePresence>
+      );
+  }
+
+  // --- Render: Style Advisor Mode ---
+  if (mode === 'style-advisor') {
+      return (
+          <AnimatePresence mode="wait">
+            <motion.div
+                key="style-advisor"
+                className="w-full h-full flex flex-col items-center px-4 md:justify-center relative overflow-hidden"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+            >
+                {/* Back Button */}
+                {!isAdvisorCameraOpen && (
+                    <button 
+                        onClick={() => {
+                            setMode('selection');
+                            resetAdvisor();
+                        }}
+                        className="absolute top-0 left-6 z-40 flex items-center gap-2 text-gray-500 dark:text-stone-400 hover:text-gray-900 dark:hover:text-stone-100 transition-colors py-4"
+                    >
+                        <ChevronLeftIcon className="w-5 h-5" />
+                        <span>Back to Home</span>
+                    </button>
+                )}
+
+                {/* State: Upload & Analyze */}
+                {!advisorResult && !isAnalyzing && !isAdvisorCameraOpen && (
+                     <motion.div 
+                        key="advisor-upload"
+                        variants={itemVariants}
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        className="w-full h-full max-w-md flex flex-col items-center justify-between md:justify-center gap-4 py-8 md:py-4 mt-8 md:mt-0"
+                     >
+                         <div className="text-center flex-shrink-0">
+                             <h2 className="text-2xl md:text-3xl font-serif text-gray-900 dark:text-stone-50">Rate my Fit</h2>
+                             <p className="text-sm md:text-base text-gray-500 dark:text-stone-400">Upload a photo to get professional style advice.</p>
+                         </div>
+                         
+                         <label className="w-full flex-1 min-h-0 md:max-h-[60vh] rounded-3xl border-2 border-dashed border-gray-300 dark:border-stone-700 hover:border-gray-900 dark:hover:border-stone-400 bg-gray-50 dark:bg-stone-900 flex flex-col items-center justify-center cursor-pointer transition-colors group relative overflow-hidden my-4">
+                             {advisorPreview ? (
+                                 <img src={advisorPreview} alt="Advisor Upload" className="w-full h-full object-contain object-center p-2" />
+                             ) : (
+                                 <>
+                                     <div className="p-4 rounded-full bg-white dark:bg-stone-800 shadow-sm mb-4 group-hover:scale-110 transition-transform">
+                                         <PlusIcon className="w-6 h-6 text-gray-400 dark:text-stone-500" />
+                                     </div>
+                                     <span className="text-sm font-medium text-gray-500 dark:text-stone-400">Upload Outfit</span>
+                                 </>
+                             )}
+                             <input type="file" className="hidden" accept="image/*" onChange={handleAdvisorFileChange} />
+                             {advisorPreview && (
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-medium">Change Photo</div>
+                             )}
+
+                            {!advisorPreview && (
+                                <div className="absolute bottom-6 z-30 pointer-events-auto">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); startAdvisorCamera(); }}
+                                        className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-stone-800 hover:bg-gray-200 dark:hover:bg-stone-700 rounded-full text-sm font-medium text-gray-700 dark:text-stone-300 transition-colors shadow-sm"
+                                    >
+                                        <CameraIcon className="w-4 h-4" />
+                                        <span>Use Camera</span>
+                                    </button>
+                                </div>
+                            )}
+                         </label>
+
+                         {error && (
+                            <p className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 px-3 py-1 rounded-full border border-red-100 dark:border-red-900">{error}</p>
+                         )}
+
+                         <button 
+                            onClick={executeStyleAnalysis}
+                            disabled={!advisorFile}
+                            className="w-full py-4 flex-shrink-0 rounded-full bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+                         >
+                             <SparklesIcon className="w-5 h-5" />
+                             <span>Get Advice</span>
+                         </button>
+                     </motion.div>
+                )}
+                
+                 {/* State: Camera View */}
+                {isAdvisorCameraOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="w-full max-w-md aspect-[4/5] md:aspect-square max-h-[70vh] relative bg-black rounded-3xl overflow-hidden shadow-2xl my-auto"
+                    >
+                        <video 
+                            ref={videoRef}
+                            autoPlay 
+                            playsInline 
+                            muted
+                            className="w-full h-full object-cover transform -scale-x-100" // Mirror effect
+                        />
+                        
+                        <div className="absolute inset-0 pointer-events-none border border-white/20 rounded-3xl z-10"></div>
+                        
+                        {/* Camera Controls */}
+                        <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-8 z-20">
+                            <button
+                                onClick={stopAdvisorCamera}
+                                className="p-3 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-full text-white transition-colors"
+                                aria-label="Close Camera"
+                            >
+                                <XIcon className="w-6 h-6" />
+                            </button>
+                            
+                            <button
+                                onClick={captureAdvisorPhoto}
+                                className="p-1 rounded-full border-4 border-white/80 hover:scale-105 transition-transform"
+                                aria-label="Capture Photo"
+                            >
+                                <div className="w-14 h-14 bg-white rounded-full"></div>
+                            </button>
+                            
+                            <div className="w-12"></div> {/* Spacer to center the capture button */}
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* State: Analyzing */}
+                {isAnalyzing && (
+                    <motion.div 
+                        key="analyzing"
+                        initial={{ opacity: 0 }} 
+                        animate={{ opacity: 1 }} 
+                        className="flex flex-col items-center justify-center h-full w-full"
+                    >
+                        <ProcessingLoader message="Analyzing your style..." subMessage="Our AI stylist is reviewing your fit..." />
+                    </motion.div>
+                )}
+
+                {/* State: Result */}
+                {advisorResult && (
+                    <motion.div
+                        key="advisor-result"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="flex flex-col md:flex-row gap-8 w-full max-w-5xl h-full py-16 md:py-8 px-4"
+                    >
+                        {/* Image Side */}
+                        <div className="flex-1 bg-white dark:bg-stone-900 rounded-3xl p-2 border border-gray-100 dark:border-stone-800 shadow-xl overflow-hidden min-h-[40vh] md:min-h-0">
+                            {advisorPreview && (
+                                <img src={advisorPreview} alt="Analyzed Outfit" className="w-full h-full object-contain rounded-2xl" />
+                            )}
+                        </div>
+
+                        {/* Text Side */}
+                        <div className="flex-1 flex flex-col gap-6 overflow-y-auto">
+                            <div>
+                                <h2 className="text-3xl font-serif text-gray-900 dark:text-stone-50 mb-2">Style Report</h2>
+                                <p className="text-gray-500 dark:text-stone-400">Here is what our AI stylist thinks.</p>
+                            </div>
+
+                            <div className="flex-grow bg-white/50 dark:bg-stone-900/50 rounded-3xl p-6 border border-gray-100 dark:border-stone-800 overflow-y-auto custom-scrollbar">
+                                <p className="text-gray-800 dark:text-stone-200 whitespace-pre-wrap leading-relaxed text-sm md:text-base font-sans">
+                                    {advisorResult}
+                                </p>
+                            </div>
+
+                            <button 
+                                onClick={resetAdvisor}
+                                className="w-full py-4 rounded-full bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 font-semibold hover:scale-[1.02] active:scale-95 transition-all shadow-lg"
+                            >
+                                Analyze Another Outfit
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+
+            </motion.div>
           </AnimatePresence>
       );
   }
@@ -449,15 +764,9 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
                         key="generating"
                         initial={{ opacity: 0 }} 
                         animate={{ opacity: 1 }} 
-                        className="flex flex-col items-center gap-8 py-20 my-auto"
+                        className="flex flex-col items-center justify-center h-full w-full"
                     >
-                        <div className="relative">
-                            <div className="absolute inset-0 bg-gray-200 dark:bg-stone-700 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                            <Spinner />
-                        </div>
-                        <span className="text-2xl font-serif text-gray-800 dark:text-stone-200 tracking-wide animate-pulse text-center">
-                            {compareLoadingMsg || "Processing..."}
-                        </span>
+                        <ProcessingLoader message={compareLoadingMsg || "Processing..."} subMessage="Analyzing garments and poses..." />
                     </motion.div>
                 )}
 
@@ -757,13 +1066,9 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
           <motion.div 
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
-            className="flex flex-col items-center gap-8 py-20"
+            className="flex flex-col items-center justify-center h-full w-full"
           >
-            <div className="relative">
-              <div className="absolute inset-0 bg-gray-200 dark:bg-stone-700 rounded-full blur-xl opacity-50 animate-pulse"></div>
-              <Spinner />
-            </div>
-            <span className="text-2xl font-serif text-gray-800 dark:text-stone-200 tracking-wide animate-pulse">Constructing Model...</span>
+            <ProcessingLoader message="Constructing Model" subMessage="Stitching your digital twin..." />
           </motion.div>
         )}
 

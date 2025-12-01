@@ -275,7 +275,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
                     >
                         {preparingItemId ? (
                             <>
-                                <Spinner />
+                                <Spinner className="animate-spin h-5 w-5 text-current" />
                                 <span className="ml-2">Preparing...</span>
                             </>
                         ) : (

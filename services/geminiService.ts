@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -159,4 +160,20 @@ export const generateSceneVariation = async (currentImageUrl: string, sceneDescr
         },
     });
     return handleApiResponse(response);
+};
+
+export const generateStyleAdvice = async (imageUrl: string): Promise<string> => {
+    const imagePart = dataUrlToPart(imageUrl);
+    const systemInstruction = "You are a friendly, encouraging, and expert fashion stylist. Your tone is helpful, chic, and concise.";
+    const prompt = "Analyze this outfit. 1. Rate the fit (1-10). 2. Comment on color coordination. 3. Suggest one occasion this is perfect for. 4. Suggest one accessory to complete the look. Keep the response formatted with clear emojis and short paragraphs.";
+
+    // Use gemini-2.5-flash for multimodal text tasks as per guidelines
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: [imagePart, { text: prompt }] },
+        config: {
+            systemInstruction
+        },
+    });
+    return response.text || "You look great! I couldn't generate specific advice right now.";
 };
