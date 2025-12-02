@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,6 +11,7 @@ export interface WardrobeItem {
 }
 
 export interface OutfitLayer {
-  garment: WardrobeItem | null; // null represents the base model layer
+  garment: WardrobeItem | null; // Primary garment (kept for backward compatibility)
+  garments?: WardrobeItem[]; // For multi-garment layers
   poseImages: Record<string, string>; // Maps pose instruction to image URL
 }

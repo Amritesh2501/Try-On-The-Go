@@ -9,7 +9,7 @@ import StartScreen from './components/StartScreen';
 import Canvas from './components/Canvas';
 import WardrobePanel from './components/WardrobeModal';
 import OutfitStack from './components/OutfitStack';
-import { generateVirtualTryOnImage, generatePoseVariation, generateSceneVariation } from './services/geminiService';
+import { generateVirtualTryOnImage, generatePoseVariation, generateSceneVariation, generateMultiGarmentTryOn } from './services/geminiService';
 import { OutfitLayer, WardrobeItem } from './types';
 import { defaultWardrobe } from './wardrobe';
 import Footer from './components/Footer';
@@ -66,6 +66,7 @@ const App: React.FC = () => {
   const [currentPoseIndex, setCurrentPoseIndex] = useState(0);
   const [isSheetCollapsed, setIsSheetCollapsed] = useState(false);
   const [currentScene, setCurrentScene] = useState("Studio");
+  const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   
   // Initialize Wardrobe from LocalStorage if available, else default
   const [wardrobe, setWardrobe] = useState<WardrobeItem[]>(() => {
@@ -101,10 +102,17 @@ const App: React.FC = () => {
     [outfitHistory, currentOutfitIndex]
   );
   
-  const activeGarmentIds = useMemo(() => 
-    activeOutfitLayers.map(layer => layer.garment?.id).filter(Boolean) as string[], 
-    [activeOutfitLayers]
-  );
+  const activeGarmentIds = useMemo(() => {
+    const ids = new Set<string>();
+    activeOutfitLayers.forEach(layer => {
+        if (layer.garments) {
+            layer.garments.forEach(g => ids.add(g.id));
+        } else if (layer.garment) {
+            ids.add(layer.garment.id);
+        }
+    });
+    return Array.from(ids);
+  }, [activeOutfitLayers]);
   
   const displayImageUrl = useMemo(() => {
     if (outfitHistory.length === 0) return generatedModelUrl;
@@ -174,27 +182,8 @@ const App: React.FC = () => {
     const currentImage = displayImageUrl;
     if (!currentImage || typeof currentImage !== 'string' || isLoading) return;
 
-    // Check if the garment is already in the active stack (e.g. switching back to a previous layer)
-    const activeHistory = outfitHistory.slice(0, currentOutfitIndex + 1);
-    const existingIndex = activeHistory.findIndex(l => l.garment?.id === garmentInfo.id);
-
-    if (existingIndex !== -1) {
-        if (existingIndex !== currentOutfitIndex) {
-             setCurrentOutfitIndex(existingIndex);
-             setCurrentPoseIndex(0);
-             if (isMobile) setIsSheetCollapsed(true);
-             return;
-        }
-    } else {
-        const nextLayer = outfitHistory[currentOutfitIndex + 1];
-        if (nextLayer && nextLayer.garment?.id === garmentInfo.id) {
-            setCurrentOutfitIndex(prev => prev + 1);
-            setCurrentPoseIndex(0); 
-             if (isMobile) setIsSheetCollapsed(true);
-            return;
-        }
-    }
-
+    // Logic to verify duplications or stack navigation is a bit complex with multi-mode, 
+    // so we just append a new layer for simplicity if not exact same
     if (isMobile) {
       setIsSheetCollapsed(true);
     }
@@ -218,7 +207,7 @@ const App: React.FC = () => {
       });
       setCurrentOutfitIndex(prev => prev + 1);
       
-      // Update Wardrobe Persistence: Ensure the item has a persistent URL (Base64) instead of Blob
+      // Update Wardrobe Persistence
       const isNewItem = !wardrobe.find(item => item.id === garmentInfo.id);
       if (isNewItem) {
         try {
@@ -234,13 +223,72 @@ const App: React.FC = () => {
       }
 
     } catch (err) {
-      setError(getFriendlyErrorMessage(err, 'Failed to apply garment'));
+      setError(getFriendlyErrorMessage(err as any, 'Failed to apply garment'));
       if (isMobile) setIsSheetCollapsed(false);
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
     }
-  }, [displayImageUrl, isLoading, currentPoseIndex, outfitHistory, currentOutfitIndex, isMobile, wardrobe]);
+  }, [displayImageUrl, isLoading, currentPoseIndex, currentOutfitIndex, isMobile, wardrobe]);
+
+  const handleMultiGarmentSelect = useCallback(async (items: { file: File, info: WardrobeItem }[]) => {
+      const currentImage = displayImageUrl;
+      if (!currentImage || typeof currentImage !== 'string' || isLoading || items.length === 0) return;
+
+      // Check if the garment is already in the active stack (e.g. switching back to a previous layer)
+      const activeHistory = outfitHistory.slice(0, currentOutfitIndex + 1);
+      const existingIndex = activeHistory.findIndex(l => l.garment?.id === items[0].info.id); // Assuming primary check on first item for now or logic needs adjust for multi
+      
+      if (existingIndex !== -1) {
+          if (existingIndex !== currentOutfitIndex) {
+               setCurrentOutfitIndex(existingIndex);
+               setCurrentPoseIndex(0);
+               if (isMobile) setIsSheetCollapsed(true);
+               return;
+          }
+      } else {
+        const nextLayer = outfitHistory[currentOutfitIndex + 1];
+        if (nextLayer && nextLayer.garment?.id === items[0].info.id) {
+            setCurrentOutfitIndex(prev => prev + 1);
+            setCurrentPoseIndex(0); 
+             if (isMobile) setIsSheetCollapsed(true);
+            return;
+        }
+      }
+
+      if (isMobile) setIsSheetCollapsed(true);
+
+      setError(null);
+      setIsLoading(true);
+      setLoadingMessage(`Mixing ${items.length} items...`);
+
+      try {
+          const files = items.map(i => i.file);
+          // Use the multi-garment service
+          const newImageUrl = await generateMultiGarmentTryOn(currentImage, files);
+          const currentPoseInstruction = POSE_INSTRUCTIONS[currentPoseIndex];
+
+          const newLayer: OutfitLayer = {
+              garment: items[0].info, // Fallback primary
+              garments: items.map(i => i.info), // All items
+              poseImages: { [currentPoseInstruction]: newImageUrl }
+          };
+
+          setOutfitHistory(prevHistory => {
+              const newHistory = prevHistory.slice(0, currentOutfitIndex + 1);
+              return [...newHistory, newLayer];
+          });
+          setCurrentOutfitIndex(prev => prev + 1);
+
+      } catch (err) {
+          setError(getFriendlyErrorMessage(err as any, 'Failed to apply outfit'));
+          if (isMobile) setIsSheetCollapsed(false);
+      } finally {
+          setIsLoading(false);
+          setLoadingMessage('');
+      }
+
+  }, [displayImageUrl, isLoading, currentPoseIndex, currentOutfitIndex, isMobile, outfitHistory]);
 
   const handleUndo = useCallback(() => {
     if (currentOutfitIndex > 0) {
@@ -307,7 +355,7 @@ const App: React.FC = () => {
         return newHistory;
       });
     } catch (err) {
-      setError(getFriendlyErrorMessage(err, 'Failed to change pose'));
+      setError(getFriendlyErrorMessage(err as any, 'Failed to change pose'));
       setCurrentPoseIndex(prevPoseIndex);
     } finally {
       setIsLoading(false);
@@ -344,7 +392,7 @@ const App: React.FC = () => {
           setCurrentScene(scene);
 
       } catch (err) {
-          setError(getFriendlyErrorMessage(err, 'Failed to change scene'));
+          setError(getFriendlyErrorMessage(err as any, 'Failed to change scene'));
       } finally {
           setIsLoading(false);
           setLoadingMessage('');
@@ -392,15 +440,16 @@ const App: React.FC = () => {
         {!showInitialLoader && isAppStarted && (
           <motion.div
             key="main-app"
-            className="relative w-full h-full overflow-hidden flex flex-col md:flex-row bg-[#FAFAF9] dark:bg-stone-950 transition-colors duration-300"
+            className="relative w-full h-full overflow-hidden bg-[#FAFAF9] dark:bg-stone-950 transition-colors duration-300"
             variants={pageVariants}
             initial="initial"
             animate="animate"
             exit="exit"
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
-            {/* Main Canvas Area */}
-            <main className="flex-grow relative h-full order-1 md:order-1 overflow-hidden">
+            {/* Main Canvas Area - Absolute Full Screen with Visual Centering Compensation */}
+            {/* When overlay is open, we promote Main to z-50 to sit above Sidebar (z-40) */}
+            <main className={`absolute inset-0 z-0 overflow-hidden w-full h-full md:pr-[400px] transition-[padding] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${isOverlayOpen ? '!z-50 !pr-0' : ''}`}>
               <Canvas 
                 displayImageUrl={displayImageUrl}
                 baseImage={baseImage}
@@ -412,14 +461,16 @@ const App: React.FC = () => {
                 poseInstructions={POSE_INSTRUCTIONS}
                 currentPoseIndex={currentPoseIndex}
                 availablePoseKeys={availablePoseKeys}
+                generatedPoses={outfitHistory[currentOutfitIndex]?.poseImages || {}}
                 onSceneSelect={handleSceneSelect}
                 currentScene={currentScene}
+                onOverlayStateChange={setIsOverlayOpen}
               />
             </main>
 
-            {/* Sidebar / Panel */}
+            {/* Sidebar / Panel - Floating Overlay */}
             <aside 
-              className={`absolute md:relative z-40 order-2 md:order-2 bottom-0 right-0 w-full md:w-[400px] bg-white/80 dark:bg-stone-900/80 backdrop-blur-xl md:border-l border-white/20 dark:border-stone-800 shadow-[-10px_0_30px_rgba(0,0,0,0.02)] transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isSheetCollapsed ? 'translate-y-[calc(100%-4rem)]' : 'translate-y-0'} md:translate-y-0 flex flex-col h-[85vh] md:h-full rounded-t-3xl md:rounded-none ring-1 ring-black/5 dark:ring-white/5 md:ring-0`}
+              className={`absolute top-0 right-0 h-full z-40 w-full md:w-[400px] bg-white/80 dark:bg-stone-900/80 backdrop-blur-xl md:border-l border-white/20 dark:border-stone-800 shadow-[-10px_0_30px_rgba(0,0,0,0.02)] transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isSheetCollapsed ? 'translate-y-[calc(100%-4rem)] md:translate-y-0' : 'translate-y-0'} flex flex-col rounded-t-3xl md:rounded-none ring-1 ring-black/5 dark:ring-white/5 md:ring-0`}
             >
                 {/* Mobile Handle */}
                 <button 
@@ -448,6 +499,7 @@ const App: React.FC = () => {
                   
                   <WardrobePanel
                     onGarmentSelect={handleGarmentSelect}
+                    onMultiGarmentSelect={handleMultiGarmentSelect}
                     activeGarmentIds={activeGarmentIds}
                     isLoading={isLoading}
                     wardrobe={wardrobe}

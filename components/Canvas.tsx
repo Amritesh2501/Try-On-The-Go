@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useEffect } from 'react';
-import { ChevronLeftIcon, RotateCcwIcon, DownloadIcon, ImageIcon, SparklesIcon, ShareIcon, XIcon, HeartIcon, LightningIcon, NewspaperIcon, FloppyDiskIcon } from './icons';
+import { ChevronLeftIcon, RotateCcwIcon, DownloadIcon, ImageIcon, SparklesIcon, ShareIcon, XIcon, HeartIcon, LightningIcon, NewspaperIcon, FloppyDiskIcon, CameraIcon, SunIcon } from './icons';
 import ProcessingLoader from './ProcessingLoader';
+import Spinner from './Spinner';
 import { AnimatePresence, motion } from 'framer-motion';
 import { generateStyleAdvice } from '../services/geminiService';
 
@@ -20,8 +21,10 @@ interface CanvasProps {
   poseInstructions: string[];
   currentPoseIndex: number;
   availablePoseKeys: string[];
+  generatedPoses?: Record<string, string>;
   onSceneSelect: (scene: string) => void;
   currentScene: string;
+  onOverlayStateChange?: (isOpen: boolean) => void;
 }
 
 const SCENE_OPTIONS = [
@@ -32,7 +35,16 @@ const SCENE_OPTIONS = [
     { label: "Office", value: "Modern Office Interior" }
 ];
 
-type ShareTemplateId = 'classic' | 'scrapbook' | 'street' | 'editorial' | 'y2k';
+const POSE_SHORT_LABELS = [
+    "Frontal",
+    "3/4 Turn",
+    "Profile",
+    "Action",
+    "Walking",
+    "Leaning"
+];
+
+type ShareTemplateId = 'tech' | 'cute' | 'y2k' | 'minimal' | 'street' | 'editorial' | 'retro' | 'pop';
 
 interface ShareTemplate {
     id: ShareTemplateId;
@@ -42,11 +54,14 @@ interface ShareTemplate {
 }
 
 const SHARE_TEMPLATES: ShareTemplate[] = [
-    { id: 'classic', name: 'Minimal', colors: { bg: '#FAFAF9', text: '#1c1917', accent: '#a8a29e', secondary: '#57534e' }, icon: SparklesIcon },
-    { id: 'scrapbook', name: 'Cute', colors: { bg: '#fff1f2', text: '#831843', accent: '#fbcfe8', secondary: '#db2777' }, icon: HeartIcon },
-    { id: 'street', name: 'Street', colors: { bg: '#09090b', text: '#f2f2f2', accent: '#22c55e', secondary: '#262626' }, icon: LightningIcon },
-    { id: 'editorial', name: 'Editorial', colors: { bg: '#ffffff', text: '#000000', accent: '#ef4444', secondary: '#a3a3a3' }, icon: NewspaperIcon },
-    { id: 'y2k', name: 'Y2K', colors: { bg: '#e0e7ff', text: '#1e3a8a', accent: '#f472b6', secondary: '#60a5fa' }, icon: FloppyDiskIcon },
+    { id: 'tech', name: 'Cyber', colors: { bg: '#051014', text: '#00f2ff', accent: '#00f2ff', secondary: '#13232e' }, icon: FloppyDiskIcon },
+    { id: 'cute', name: 'Sweet', colors: { bg: '#ffdeeb', text: '#1f1f1f', accent: '#ff8fab', secondary: '#ffb3c6' }, icon: HeartIcon },
+    { id: 'y2k', name: 'Y2K', colors: { bg: '#e0e7ff', text: '#312e81', accent: '#f472b6', secondary: '#818cf8' }, icon: SparklesIcon },
+    { id: 'minimal', name: 'Clean', colors: { bg: '#ffffff', text: '#000000', accent: '#000000', secondary: '#404040' }, icon: NewspaperIcon },
+    { id: 'street', name: 'Urban', colors: { bg: '#efeee9', text: '#1a1a1a', accent: '#e11d48', secondary: '#d6d3d1' }, icon: LightningIcon },
+    { id: 'editorial', name: 'Vogue', colors: { bg: '#fdfbf7', text: '#1c1917', accent: '#d4d4d4', secondary: '#57534e' }, icon: NewspaperIcon },
+    { id: 'retro', name: 'Retro', colors: { bg: '#18181b', text: '#22c55e', accent: '#f43f5e', secondary: '#3f3f46' }, icon: CameraIcon },
+    { id: 'pop', name: 'Pop', colors: { bg: '#fef08a', text: '#4f46e5', accent: '#ec4899', secondary: '#fbbf24' }, icon: SunIcon },
 ];
 
 const Canvas: React.FC<CanvasProps> = ({ 
@@ -59,8 +74,10 @@ const Canvas: React.FC<CanvasProps> = ({
     onSelectPose, 
     poseInstructions, 
     currentPoseIndex, 
+    generatedPoses = {},
     onSceneSelect,
-    currentScene
+    currentScene,
+    onOverlayStateChange
 }) => {
   const [showSceneMenu, setShowSceneMenu] = useState(false);
   
@@ -73,11 +90,16 @@ const Canvas: React.FC<CanvasProps> = ({
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareImageUrl, setShareImageUrl] = useState<string | null>(null);
   const [isGeneratingShare, setIsGeneratingShare] = useState(false);
-  const [activeTemplate, setActiveTemplate] = useState<ShareTemplateId>('classic');
+  const [activeTemplate, setActiveTemplate] = useState<ShareTemplateId>('tech');
+
+  // Notify parent when overlays are open to fix z-index with sidebar
+  useEffect(() => {
+    onOverlayStateChange?.(showShareModal || showAdvisor);
+  }, [showShareModal, showAdvisor, onOverlayStateChange]);
 
   // Clear advice when image changes
   useEffect(() => {
-    setStyleAdvice(null);
+      setStyleAdvice(null);
   }, [displayImageUrl]);
 
   // Regenerate share card when template changes
@@ -117,50 +139,67 @@ const Canvas: React.FC<CanvasProps> = ({
   };
 
   // --- Canvas Drawing Helpers ---
-
   const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
       ctx.beginPath();
-      // Check if roundRect is supported (it's relatively new in some contexts)
-      if (typeof ctx.roundRect === 'function') {
-          ctx.roundRect(x, y, w, h, r);
-      } else {
-          // Polyfill for older environments
-          ctx.moveTo(x + r, y);
-          ctx.lineTo(x + w - r, y);
-          ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-          ctx.lineTo(x + w, y + h - r);
-          ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-          ctx.lineTo(x + r, y + h);
-          ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-          ctx.lineTo(x, y + r);
-          ctx.quadraticCurveTo(x, y, x + r, y);
-      }
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
       ctx.closePath();
   };
 
-  const drawTape = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, angle: number, color: string) => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(angle * Math.PI / 180);
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.8;
-      ctx.fillRect(-width/2, -15, width, 30);
-      ctx.globalAlpha = 1.0;
-      ctx.restore();
+  const drawChamferRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, chamfer: number) => {
+      ctx.beginPath();
+      ctx.moveTo(x + chamfer, y);
+      ctx.lineTo(x + w - chamfer, y);
+      ctx.lineTo(x + w, y + chamfer);
+      ctx.lineTo(x + w, y + h - chamfer);
+      ctx.lineTo(x + w - chamfer, y + h);
+      ctx.lineTo(x + chamfer, y + h);
+      ctx.lineTo(x, y + h - chamfer);
+      ctx.lineTo(x, y + chamfer);
+      ctx.closePath();
   };
 
-  const drawDoodle = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, angle: number = 0) => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(angle * Math.PI / 180);
-      ctx.font = `${size}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, 0, 0);
-      ctx.restore();
+  const drawStar = (ctx: CanvasRenderingContext2D, cx: number, cy: number, spikes: number, outerRadius: number, innerRadius: number) => {
+      let rot = Math.PI / 2 * 3;
+      let x = cx;
+      let y = cy;
+      const step = Math.PI / spikes;
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - outerRadius);
+      for (let i = 0; i < spikes; i++) {
+          x = cx + Math.cos(rot) * outerRadius;
+          y = cy + Math.sin(rot) * outerRadius;
+          ctx.lineTo(x, y);
+          rot += step;
+
+          x = cx + Math.cos(rot) * innerRadius;
+          y = cy + Math.sin(rot) * innerRadius;
+          ctx.lineTo(x, y);
+          rot += step;
+      }
+      ctx.lineTo(cx, cy - outerRadius);
+      ctx.closePath();
   };
 
-  const generateShareCard = async (templateId: ShareTemplateId = 'classic') => {
+  const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number) => {
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2, true);
+      ctx.arc(x - size * 0.7, y + size * 0.4, size * 0.7, 0, Math.PI * 2, true);
+      ctx.arc(x + size * 0.7, y + size * 0.4, size * 0.7, 0, Math.PI * 2, true);
+      ctx.arc(x - size * 1.3, y + size * 0.7, size * 0.5, 0, Math.PI * 2, true);
+      ctx.arc(x + size * 1.3, y + size * 0.7, size * 0.5, 0, Math.PI * 2, true);
+      ctx.fill();
+  };
+
+  const generateShareCard = async (templateId: ShareTemplateId = 'tech') => {
       if (!displayImageUrl) return;
       
       setIsGeneratingShare(true);
@@ -193,425 +232,103 @@ const Canvas: React.FC<CanvasProps> = ({
           if (baseImage) try { baseImg = await loadImage(baseImage); } catch(e) {}
           if (currentGarmentUrl) try { garmentImg = await loadImage(currentGarmentUrl); } catch(e) {}
 
-          // --- TEMPLATE LOGIC ---
-
-          if (templateId === 'classic') {
-              // Background
-              ctx.fillStyle = bg;
-              ctx.fillRect(0, 0, width, height);
+          if (templateId === 'tech') {
+              ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height);
+              ctx.strokeStyle = secondary; ctx.lineWidth = 2;
+              const gridSize = 60; ctx.beginPath(); for(let x=0; x<width; x+=gridSize) { ctx.moveTo(x,0); ctx.lineTo(x,height); } for(let y=0; y<height; y+=gridSize) { ctx.moveTo(0,y); ctx.lineTo(width,y); } ctx.stroke();
+              ctx.fillStyle = secondary; ctx.fillRect(50, 50, 200, 20); ctx.fillRect(width - 250, 50, 200, 20);
+              ctx.textAlign = 'center'; ctx.font = 'bold 100px "Inter", monospace'; ctx.fillStyle = accent; ctx.fillText("TRY ON", width/2, 160); ctx.fillStyle = '#fff'; ctx.fillText("THE GO", width/2, 270);
+              ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(width/2 - 250, 300); ctx.lineTo(width/2 + 250, 300); ctx.stroke();
               
-              // Texture (Subtle Noise)
-              ctx.globalAlpha = 0.04;
-              ctx.fillStyle = text;
-              for(let i=0; i<width; i+=4) {
-                  for(let j=0; j<height; j+=4) {
-                      if(Math.random() > 0.5) ctx.fillRect(i, j, 2, 2);
-                  }
-              }
-              ctx.globalAlpha = 1.0;
-
-              // Title
-              ctx.fillStyle = text;
-              ctx.font = 'italic 500 110px "Instrument Serif", serif';
-              ctx.textAlign = 'center';
-              ctx.fillText("My Fit Check", width / 2, 180);
-
-              ctx.font = '500 28px "Inter", sans-serif';
-              ctx.fillStyle = secondary;
-              ctx.fillText("CREATED WITH TRY ON THE GO", width / 2, 240);
-
-              // Main Image
-              const targetResH = 1150;
-              const scaleRes = Math.min((width - 160) / resultImg.width, targetResH / resultImg.height);
-              const resW = resultImg.width * scaleRes;
-              const resH = resultImg.height * scaleRes;
-              const resX = (width - resW) / 2;
-              const resY = 320;
+              const mainW = 800; const mainH = 1000; const mainX = (width - mainW)/2; const startY = 360;
+              ctx.save(); drawChamferRect(ctx, mainX, startY, mainW, mainH, 40); ctx.clip();
+              const scaleR = Math.max(mainW/resultImg.width, mainH/resultImg.height); ctx.drawImage(resultImg, mainX + (mainW-resultImg.width*scaleR)/2, startY, resultImg.width*scaleR, resultImg.height*scaleR); ctx.restore();
+              ctx.strokeStyle = accent; ctx.lineWidth = 8; drawChamferRect(ctx, mainX, startY, mainW, mainH, 40); ctx.stroke(); ctx.shadowColor = accent; ctx.shadowBlur = 20; ctx.lineWidth = 2; ctx.stroke(); ctx.shadowBlur = 0;
               
-              // Shadow
-              ctx.shadowColor = 'rgba(0,0,0,0.08)';
-              ctx.shadowBlur = 50;
-              ctx.shadowOffsetY = 25;
-
-              ctx.save();
-              drawRoundedRect(ctx, resX, resY, resW, resH, 32);
-              ctx.clip();
-              ctx.drawImage(resultImg, resX, resY, resW, resH);
-              ctx.restore();
-              ctx.shadowColor = 'transparent';
-
-              // Border
-              ctx.strokeStyle = '#ffffff';
-              ctx.lineWidth = 12;
-              drawRoundedRect(ctx, resX, resY, resW, resH, 32);
-              ctx.stroke();
-
-              // Inputs area
-              if (baseImg && garmentImg) {
-                  const sSize = 320;
-                  const gap = 80;
-                  const startY = resY + resH + 80;
-                  const totalW = sSize * 2 + gap;
-                  let startX = (width - totalW) / 2;
-
-                  // Connect Line
-                  ctx.strokeStyle = accent;
-                  ctx.lineWidth = 3;
-                  ctx.setLineDash([15, 15]);
-                  ctx.beginPath();
-                  ctx.moveTo(startX + sSize/2, startY + sSize/2);
-                  ctx.lineTo(startX + sSize + gap + sSize/2, startY + sSize/2);
-                  ctx.stroke();
-                  ctx.setLineDash([]);
-
-                  // Base Bubble
-                  ctx.save();
-                  drawRoundedRect(ctx, startX, startY, sSize, sSize, sSize/2);
-                  ctx.clip();
-                  const scaleB = Math.max(sSize/baseImg.width, sSize/baseImg.height);
-                  ctx.drawImage(baseImg, startX - (baseImg.width*scaleB-sSize)/2, startY - (baseImg.height*scaleB-sSize)/2, baseImg.width*scaleB, baseImg.height*scaleB);
-                  ctx.restore();
-                  
-                  ctx.strokeStyle = '#fff';
-                  ctx.lineWidth = 8;
-                  drawRoundedRect(ctx, startX, startY, sSize, sSize, sSize/2);
-                  ctx.stroke();
-                  
-                  ctx.fillStyle = secondary;
-                  ctx.font = '600 24px "Inter", sans-serif';
-                  ctx.fillText("ME", startX + sSize/2, startY + sSize + 45);
-
-                  // Plus Icon
-                  ctx.fillStyle = '#fff';
-                  ctx.beginPath(); ctx.arc(width/2, startY + sSize/2, 35, 0, Math.PI*2); ctx.fill();
-                  ctx.fillStyle = accent;
-                  ctx.font = '50px sans-serif';
-                  ctx.textBaseline = 'middle';
-                  ctx.fillText("+", width/2, startY + sSize/2 + 4);
-                  ctx.textBaseline = 'alphabetic';
-
-                  startX += sSize + gap;
-
-                  // Garment Bubble
-                  ctx.save();
-                  drawRoundedRect(ctx, startX, startY, sSize, sSize, sSize/2);
-                  ctx.clip();
-                  ctx.fillStyle = '#fff';
-                  ctx.fillRect(startX, startY, sSize, sSize);
-                  const scaleG = Math.min((sSize-60)/garmentImg.width, (sSize-60)/garmentImg.height);
-                  ctx.drawImage(garmentImg, startX + (sSize - garmentImg.width*scaleG)/2, startY + (sSize - garmentImg.height*scaleG)/2, garmentImg.width*scaleG, garmentImg.height*scaleG);
-                  ctx.restore();
-                  
-                  ctx.strokeStyle = '#fff';
-                  ctx.lineWidth = 8;
-                  drawRoundedRect(ctx, startX, startY, sSize, sSize, sSize/2);
-                  ctx.stroke();
-
-                  ctx.fillStyle = secondary;
-                  ctx.fillText("FIT", startX + sSize/2, startY + sSize + 45);
-              }
-          } 
-          else if (templateId === 'scrapbook') {
-              // Background
-              ctx.fillStyle = bg;
-              ctx.fillRect(0, 0, width, height);
-              
-              // Grid Pattern
-              ctx.strokeStyle = accent;
-              ctx.globalAlpha = 0.5;
-              ctx.lineWidth = 2;
-              for(let i=0; i<width; i+=60) {
-                  ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,height); ctx.stroke();
-              }
-              for(let j=0; j<height; j+=60) {
-                  ctx.beginPath(); ctx.moveTo(0,j); ctx.lineTo(width,j); ctx.stroke();
-              }
-              ctx.globalAlpha = 1.0;
-
-              // Title
-              ctx.fillStyle = text;
-              ctx.font = '700 130px "Instrument Serif", serif';
-              ctx.textAlign = 'center';
-              ctx.save();
-              ctx.translate(width/2, 240);
-              ctx.rotate(-4 * Math.PI / 180);
-              ctx.fillText("My New Look!", 0, 0);
-              ctx.restore();
-
-              // Main Image (Polaroid)
-              const resW = 850;
-              const resH = 1000;
-              const resX = (width - resW) / 2;
-              const resY = 400;
-
-              ctx.save();
-              ctx.translate(width/2, resY + resH/2);
-              ctx.rotate(3 * Math.PI / 180); 
-              ctx.translate(-width/2, -(resY + resH/2));
-
-              // White Frame
-              ctx.fillStyle = '#fff';
-              ctx.shadowColor = 'rgba(0,0,0,0.15)';
-              ctx.shadowBlur = 40;
-              ctx.shadowOffsetY = 20;
-              ctx.fillRect(resX - 40, resY - 40, resW + 80, resH + 320);
-              ctx.shadowColor = 'transparent';
-
-              // Image
-              const scaleRes = Math.min(resW / resultImg.width, resH / resultImg.height);
-              const drawW = resultImg.width * scaleRes;
-              const drawH = resultImg.height * scaleRes;
-              ctx.fillStyle = bg; // placeholder bg inside polaroid
-              ctx.fillRect(resX, resY, resW, resH);
-              ctx.drawImage(resultImg, resX + (resW - drawW)/2, resY + (resH - drawH)/2, drawW, drawH);
-              
-              // Caption
-              ctx.font = '50px "Instrument Serif", serif';
-              ctx.fillStyle = secondary;
-              ctx.textAlign = 'center';
-              ctx.fillText("Feeling cute today ✨", width/2, resY + resH + 160);
-              ctx.font = '26px monospace';
-              ctx.fillStyle = secondary;
-              ctx.globalAlpha = 0.7;
-              ctx.fillText(new Date().toLocaleDateString(), width/2, resY + resH + 210);
-              ctx.globalAlpha = 1.0;
-              
-              // Tape
-              drawTape(ctx, resX, resY, 200, -45, accent); // Use accent pink for tape
-              drawTape(ctx, resX + resW, resY, 200, 45, accent); 
-
-              ctx.restore();
-
-              // Doodles
-              drawDoodle(ctx, "✨", 150, 350, 100, -15);
-              drawDoodle(ctx, "💖", width - 150, 300, 110, 15);
-              drawDoodle(ctx, "🎀", width - 180, 1750, 100, 10);
-              drawDoodle(ctx, "⭐", 180, 1700, 80, -10);
+              const boxS = 250; const boxY = startY + mainH + 60;
+              if(baseImg) { const bX = 100; ctx.strokeStyle = secondary; ctx.lineWidth = 4; drawChamferRect(ctx, bX, boxY, boxS, boxS, 20); ctx.stroke(); ctx.save(); drawChamferRect(ctx, bX, boxY, boxS, boxS, 20); ctx.clip(); const scaleB = Math.max(boxS/baseImg.width, boxS/baseImg.height); ctx.drawImage(baseImg, bX + (boxS-baseImg.width*scaleB)/2, boxY, baseImg.width*scaleB, baseImg.height*scaleB); ctx.restore(); ctx.strokeStyle = secondary; ctx.beginPath(); ctx.moveTo(bX + boxS/2, boxY); ctx.lineTo(bX + boxS/2, boxY - 30); ctx.lineTo(mainX + 100, boxY - 30); ctx.lineTo(mainX + 100, startY + mainH); ctx.stroke(); }
+              if(garmentImg) { const gX = width - 100 - boxS; ctx.strokeStyle = accent; ctx.lineWidth = 4; drawChamferRect(ctx, gX, boxY, boxS, boxS, 20); ctx.stroke(); ctx.font = '24px monospace'; ctx.fillStyle = accent; ctx.textAlign = 'center'; ctx.fillText("FIT_DATA", gX + boxS/2, boxY + boxS + 35); ctx.save(); drawChamferRect(ctx, gX, boxY, boxS, boxS, 20); ctx.clip(); const scaleG = Math.max(boxS/garmentImg.width, boxS/garmentImg.height); ctx.drawImage(garmentImg, gX + (boxS-garmentImg.width*scaleG)/2, boxY + (boxS-garmentImg.height*scaleG)/2, garmentImg.width*scaleG, garmentImg.height*scaleG); ctx.restore(); ctx.strokeStyle = accent; ctx.beginPath(); ctx.moveTo(gX + boxS/2, boxY); ctx.lineTo(gX + boxS/2, boxY - 30); ctx.lineTo(mainX + mainW - 100, boxY - 30); ctx.lineTo(mainX + mainW - 100, startY + mainH); ctx.stroke(); }
+              ctx.fillStyle = text; ctx.font = '30px monospace'; ctx.textAlign = 'center'; ctx.fillText("VIRTUAL_TRY_ON_SYSTEM // V.2.5", width/2, height - 50);
           }
-          else if (templateId === 'street') {
-              // Background
-              ctx.fillStyle = bg;
-              ctx.fillRect(0, 0, width, height);
-              
-              // Noise
-              ctx.fillStyle = '#ffffff';
-              ctx.globalAlpha = 0.05;
-              for(let i=0; i<4000; i++) {
-                 ctx.fillRect(Math.random()*width, Math.random()*height, 2, 2);
-              }
-              ctx.globalAlpha = 1.0;
-
-              // Massive BG Text
-              ctx.font = '900 340px "Inter", sans-serif';
-              ctx.fillStyle = secondary; 
-              ctx.textAlign = 'center';
-              ctx.save();
-              ctx.translate(width/2, height/2);
-              ctx.rotate(-90 * Math.PI / 180);
-              ctx.fillText("ARCHIVE", 0, 0);
-              ctx.restore();
-
-              // Header
-              ctx.fillStyle = accent; 
-              ctx.font = '900 150px "Inter", sans-serif';
-              ctx.textAlign = 'left';
-              ctx.fillText("FIT", 80, 220);
-              
-              ctx.strokeStyle = text;
-              ctx.lineWidth = 3;
-              ctx.strokeText("CHECK", 80, 350);
-              ctx.fillStyle = text;
-              ctx.fillText("CHECK", 88, 358); // Offset fill effect
-
-              // Main Image
-              const resW = width - 120;
-              const resH = 1150;
-              const resX = 60;
-              const resY = 420;
-
-              // Accent block behind
-              ctx.fillStyle = accent;
-              ctx.fillRect(resX + 30, resY + 30, resW, resH);
-
-              // Image Container Background
-              ctx.fillStyle = secondary;
-              ctx.fillRect(resX, resY, resW, resH);
-
-              const scaleRes = Math.min(resW / resultImg.width, resH / resultImg.height);
-              const drawW = resultImg.width * scaleRes;
-              const drawH = resultImg.height * scaleRes;
-              ctx.drawImage(resultImg, resX + (resW - drawW)/2, resY + (resH - drawH)/2, drawW, drawH);
-              
-              // Overlays on image
-              ctx.strokeStyle = accent;
-              ctx.lineWidth = 3;
-              // Crosshairs
-              const chLen = 40;
-              ctx.beginPath(); ctx.moveTo(resX + 30, resY + 30); ctx.lineTo(resX + 30 + chLen, resY + 30); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(resX + 30, resY + 30); ctx.lineTo(resX + 30, resY + 30 + chLen); ctx.stroke();
-              
-              ctx.beginPath(); ctx.moveTo(resX + resW - 30, resY + resH - 30); ctx.lineTo(resX + resW - 30 - chLen, resY + resH - 30); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(resX + resW - 30, resY + resH - 30); ctx.lineTo(resX + resW - 30, resY + resH - 30 - chLen); ctx.stroke();
-
-              // Footer
-              ctx.fillStyle = text;
-              ctx.font = 'bold 50px monospace';
-              ctx.textAlign = 'right';
-              ctx.fillText("AI_GEN_V1", width - 80, resY + resH + 80);
-
-              // Barcode visual
-              let bx = 80;
-              const by = resY + resH + 40;
-              ctx.fillStyle = text;
-              for(let i=0; i<35; i++) {
-                  const w = Math.random() > 0.5 ? 5 : 12;
-                  ctx.fillRect(bx, by, w, 50);
-                  bx += w + 6;
-              }
-              
-              drawDoodle(ctx, "⚡", width - 120, 180, 140);
+          else if (templateId === 'cute') {
+              ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height); ctx.fillStyle = secondary; ctx.globalAlpha = 0.15; for(let x=20; x<width; x+=40) { for(let y=20; y<height; y+=40) { ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill(); } } ctx.globalAlpha = 1.0;
+              ctx.fillStyle = '#ffffff'; drawCloud(ctx, 150, 150, 80); drawCloud(ctx, 950, 250, 90); drawCloud(ctx, 540, 1700, 100);
+              ctx.textAlign = 'center'; ctx.font = '900 120px "Inter", sans-serif'; ctx.fillStyle = text; ctx.fillText("TRY ON", width/2, 200); ctx.fillText("THE GO", width/2, 310);
+              const mainW = 800; const mainH = 1000; const mainX = (width - mainW)/2; const mainY = 380;
+              ctx.save(); drawRoundedRect(ctx, mainX, mainY, mainW, mainH, 60); ctx.clip(); const scaleR = Math.max(mainW/resultImg.width, mainH/resultImg.height); ctx.drawImage(resultImg, mainX + (mainW-resultImg.width*scaleR)/2, mainY, resultImg.width*scaleR, resultImg.height*scaleR); ctx.restore();
+              ctx.strokeStyle = text; ctx.lineWidth = 6; drawRoundedRect(ctx, mainX, mainY, mainW, mainH, 60); ctx.stroke();
+              const bubbleY = mainY + mainH + 50; const bubbleS = 240;
+              if (baseImg) { const bX = width/2 - bubbleS - 30; ctx.fillStyle = '#fff0f5'; drawRoundedRect(ctx, bX, bubbleY, bubbleS, bubbleS, 40); ctx.fill(); ctx.lineWidth = 4; ctx.stroke(); ctx.save(); drawRoundedRect(ctx, bX + 10, bubbleY + 10, bubbleS - 20, bubbleS - 20, 30); ctx.clip(); const scaleB = Math.max((bubbleS-20)/baseImg.width, (bubbleS-20)/baseImg.height); ctx.drawImage(baseImg, bX+10 + (bubbleS-20-baseImg.width*scaleB)/2, bubbleY+10, baseImg.width*scaleB, baseImg.height*scaleB); ctx.restore(); ctx.font = '800 24px "Inter", sans-serif'; ctx.fillStyle = text; ctx.textAlign = 'center'; ctx.fillText("MODEL", bX + bubbleS/2, bubbleY + bubbleS + 40); }
+              if (garmentImg) { const gX = width/2 + 30; ctx.fillStyle = '#fff0f5'; drawRoundedRect(ctx, gX, bubbleY, bubbleS, bubbleS, 40); ctx.fill(); ctx.lineWidth = 4; ctx.stroke(); ctx.save(); drawRoundedRect(ctx, gX + 10, bubbleY + 10, bubbleS - 20, bubbleS - 20, 30); ctx.clip(); const scaleG = Math.min((bubbleS-20)/garmentImg.width, (bubbleS-20)/garmentImg.height); const dw = garmentImg.width*scaleG; const dh = garmentImg.height*scaleG; ctx.drawImage(garmentImg, gX + 10 + (bubbleS-20-dw)/2, bubbleY + 10 + (bubbleS-20-dh)/2, dw, dh); ctx.restore(); ctx.font = '800 24px "Inter", sans-serif'; ctx.fillStyle = text; ctx.textAlign = 'center'; ctx.fillText("FIT", gX + bubbleS/2, bubbleY + bubbleS + 40); }
           }
-          else if (templateId === 'editorial') {
-            // Background
-            ctx.fillStyle = bg;
-            ctx.fillRect(0, 0, width, height);
-
-            // Large Header Behind
-            // Use secondary color with very low opacity as watermark
-            ctx.fillStyle = secondary;
-            ctx.globalAlpha = 0.15;
-            ctx.font = 'bold 380px "Instrument Serif", serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText("MODE", width / 2, 420);
-            ctx.globalAlpha = 1.0;
-
-            // Main Image
-            const resW = 920;
-            const resH = 1250;
-            const resX = (width - resW) / 2;
-            const resY = 350;
-            
-            // Draw Main Image
-            ctx.drawImage(resultImg, resX, resY, resW, resH);
-            
-            // Frame
-            ctx.strokeStyle = text;
-            ctx.lineWidth = 2;
-            ctx.strokeRect(resX, resY, resW, resH); 
-
-            // Text Overlay on top - use text color for contrast
-            ctx.fillStyle = text;
-            ctx.font = 'bold 150px "Instrument Serif", serif';
-            ctx.textAlign = 'center';
-            ctx.fillText("VIRTUAL", width / 2, 280); 
-
-            // Footer info
-            ctx.beginPath(); 
-            ctx.moveTo(width/2, resY + resH + 80); 
-            ctx.lineTo(width/2, resY + resH + 180); 
-            ctx.strokeStyle = secondary;
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            ctx.font = '40px "Inter", sans-serif';
-            ctx.fillStyle = text;
-            ctx.fillText("ISSUE 01", width / 2, resY + resH + 240);
-            
-            ctx.font = 'italic 32px "Instrument Serif", serif';
-            ctx.fillStyle = secondary;
-            ctx.fillText("The Digital Collection", width / 2, resY + resH + 290);
+           else if (templateId === 'y2k') {
+              const grad = ctx.createLinearGradient(0, 0, width, height); grad.addColorStop(0, '#fdf4ff'); grad.addColorStop(0.5, '#e0e7ff'); grad.addColorStop(1, '#fae8ff'); ctx.fillStyle = grad; ctx.fillRect(0, 0, width, height);
+              ctx.fillStyle = '#fff'; for(let i=0; i<30; i++) { drawStar(ctx, Math.random()*width, Math.random()*height, 4, 15, 5); ctx.fill(); }
+              ctx.font = '900 130px "Inter", cursive'; ctx.strokeStyle = text; ctx.lineWidth = 15; ctx.lineJoin = 'round'; ctx.textAlign = 'center'; ctx.strokeText("Try on", width/2, 200); ctx.fillStyle = '#fff'; ctx.fillText("Try on", width/2, 200);
+              ctx.strokeText("The Go", width/2, 320); ctx.fillStyle = '#fff'; ctx.fillText("The Go", width/2, 320);
+              ctx.fillStyle = '#fde047'; ctx.strokeStyle = text; ctx.lineWidth = 8; drawStar(ctx, 900, 220, 5, 120, 60); ctx.fill(); ctx.stroke(); ctx.fillStyle = text; ctx.beginPath(); ctx.arc(860, 210, 8, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(940, 210, 8, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(900, 240, 20, 0, Math.PI, false); ctx.stroke();
+              const frameW = 850; const frameH = 1000; const frameX = (width - frameW)/2; const frameY = 420;
+              ctx.fillStyle = '#dbeafe'; drawRoundedRect(ctx, frameX, frameY, frameW, frameH, 60); ctx.fill(); ctx.strokeStyle = text; ctx.lineWidth = 8; ctx.stroke();
+              ctx.fillStyle = '#fff'; drawRoundedRect(ctx, frameX + 20, frameY + 20, frameW - 40, frameH - 40, 45); ctx.fill();
+              ctx.save(); drawRoundedRect(ctx, frameX + 20, frameY + 20, frameW - 40, frameH - 40, 45); ctx.clip(); const scaleR = Math.max((frameW-40)/resultImg.width, (frameH-40)/resultImg.height); ctx.drawImage(resultImg, frameX+20 + (frameW-40-resultImg.width*scaleR)/2, frameY+20, resultImg.width*scaleR, resultImg.height*scaleR); ctx.restore();
+              const circleY = frameY + frameH + 150; const radius = 130;
+              if(baseImg) { const cx = width/2 - 200; ctx.save(); ctx.beginPath(); ctx.arc(cx, circleY, radius, 0, Math.PI*2); ctx.clip(); const scaleB = Math.max((radius*2)/baseImg.width, (radius*2)/baseImg.height); ctx.drawImage(baseImg, cx - baseImg.width*scaleB/2, circleY - baseImg.height*scaleB/2, baseImg.width*scaleB, baseImg.height*scaleB); ctx.restore(); ctx.beginPath(); ctx.arc(cx, circleY, radius, 0, Math.PI*2); ctx.lineWidth = 8; ctx.strokeStyle = text; ctx.stroke(); ctx.font = 'bold 40px "Inter", sans-serif'; ctx.fillStyle = text; ctx.fillText("ME", cx, circleY + radius + 50); }
+              ctx.font = 'bold 100px sans-serif'; ctx.fillStyle = text; ctx.fillText("+", width/2, circleY + 30);
+              if(garmentImg) { const cx = width/2 + 200; ctx.save(); ctx.beginPath(); ctx.arc(cx, circleY, radius, 0, Math.PI*2); ctx.clip(); ctx.fillStyle = '#e0f2fe'; ctx.fill(); const scaleG = Math.min((radius*1.5)/garmentImg.width, (radius*1.5)/garmentImg.height); ctx.drawImage(garmentImg, cx - garmentImg.width*scaleG/2, circleY - garmentImg.height*scaleG/2, garmentImg.width*scaleG, garmentImg.height*scaleG); ctx.restore(); ctx.beginPath(); ctx.arc(cx, circleY, radius, 0, Math.PI*2); ctx.lineWidth = 8; ctx.strokeStyle = text; ctx.stroke(); ctx.font = 'bold 40px "Inter", sans-serif'; ctx.fillStyle = text; ctx.fillText("FIT", cx, circleY + radius + 50); }
+           }
+          else if (templateId === 'minimal') {
+              ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height);
+              ctx.textAlign = 'center'; ctx.font = 'bold 140px "Inter", sans-serif'; ctx.fillStyle = text; ctx.fillText("TRY ON", width/2, 220); ctx.font = '140px "Inter", sans-serif'; ctx.fillText("THE GO", width/2, 360);
+              const mainW = 800; const mainH = 1050; const mainX = (width - mainW)/2; const startY = 420;
+              ctx.save(); drawRoundedRect(ctx, mainX, startY, mainW, mainH, 30); ctx.clip(); const scaleR = Math.max(mainW/resultImg.width, mainH/resultImg.height); ctx.drawImage(resultImg, mainX + (mainW-resultImg.width*scaleR)/2, startY, resultImg.width*scaleR, resultImg.height*scaleR); ctx.restore();
+              ctx.strokeStyle = text; ctx.lineWidth = 3; drawRoundedRect(ctx, mainX, startY, mainW, mainH, 30); ctx.stroke();
+              const boxY = startY + mainH + 50; const boxW = 220; const boxH = 280;
+              if (baseImg) { const bX = width/2 - boxW - 20; ctx.fillStyle = '#fff'; drawRoundedRect(ctx, bX, boxY, boxW, boxH, 20); ctx.save(); drawRoundedRect(ctx, bX, boxY, boxW, boxH, 20); ctx.clip(); const scaleB = Math.max(boxW/baseImg.width, boxH/baseImg.height); ctx.drawImage(baseImg, bX + (boxW-baseImg.width*scaleB)/2, boxY, baseImg.width*scaleB, baseImg.height*scaleB); ctx.restore(); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillRect(bX + 10, boxY + 10, 80, 30); ctx.fillStyle = text; ctx.font = 'bold 20px "Inter", sans-serif'; ctx.textAlign = 'left'; ctx.fillText("MODEL", bX + 20, boxY + 32); }
+              if (garmentImg) { const gX = width/2 + 20; ctx.save(); drawRoundedRect(ctx, gX, boxY, boxW, boxH, 20); ctx.clip(); const scaleG = Math.min((boxW-20)/garmentImg.width, (boxH-20)/garmentImg.height); ctx.drawImage(garmentImg, gX + (boxW-garmentImg.width*scaleG)/2, boxY + (boxH-garmentImg.height*scaleG)/2, garmentImg.width*scaleG, garmentImg.height*scaleG); ctx.restore(); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillRect(gX + 10, boxY + 10, 50, 30); ctx.fillStyle = text; ctx.font = 'bold 20px "Inter", sans-serif'; ctx.textAlign = 'left'; ctx.fillText("FIT", gX + 20, boxY + 32); }
+              ctx.font = '30px "Inter", sans-serif'; ctx.fillStyle = secondary; ctx.textAlign = 'center'; ctx.fillText("Try on the Go · Virtual Fitting", width/2, height - 60);
           }
-          else if (templateId === 'y2k') {
-            // Gradient Background using template colors
-            const gradient = ctx.createLinearGradient(0, 0, width, height);
-            gradient.addColorStop(0, secondary); 
-            gradient.addColorStop(1, bg); 
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, width, height);
-
-            // Grid
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.lineWidth = 2;
-            for (let i = 0; i < width; i += 80) {
-                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke();
-            }
-            for (let j = 0; j < height; j += 80) {
-                ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(width, j); ctx.stroke();
-            }
-
-            // Window Logic
-            const winW = 940;
-            const winH = 1450;
-            const winX = (width - winW) / 2;
-            const winY = 240;
-
-            // Shadow
-            ctx.fillStyle = 'rgba(0,0,0,0.4)';
-            ctx.fillRect(winX + 25, winY + 25, winW, winH);
-
-            // Window Body - classic grey
-            ctx.fillStyle = '#c0c0c0';
-            ctx.fillRect(winX, winY, winW, winH);
-            
-            // Bevels
-            ctx.lineWidth = 4;
-            ctx.strokeStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(winX, winY+winH); ctx.lineTo(winX, winY); ctx.lineTo(winX+winW, winY); ctx.stroke();
-            ctx.strokeStyle = '#808080'; ctx.beginPath(); ctx.moveTo(winX+winW, winY); ctx.lineTo(winX+winW, winY+winH); ctx.lineTo(winX, winY+winH); ctx.stroke();
-
-            // Title Bar
-            const gradTitle = ctx.createLinearGradient(winX, winY, winX+winW, winY);
-            gradTitle.addColorStop(0, text); 
-            gradTitle.addColorStop(1, secondary);
-            ctx.fillStyle = gradTitle;
-            ctx.fillRect(winX + 6, winY + 6, winW - 12, 55);
-            
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 30px monospace';
-            ctx.textAlign = 'left';
-            ctx.fillText("ootd_generator.exe", winX + 20, winY + 45);
-
-            // Buttons
-            const btnSize = 40;
-            const btnX = winX + winW - 55;
-            const btnY = winY + 12;
-            ctx.fillStyle = '#c0c0c0';
-            ctx.fillRect(btnX, btnY, btnSize, btnSize);
-            // Button Bevels
-            ctx.strokeStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(btnX, btnY+btnSize); ctx.lineTo(btnX, btnY); ctx.lineTo(btnX+btnSize, btnY); ctx.stroke();
-            ctx.strokeStyle = '#404040'; ctx.beginPath(); ctx.moveTo(btnX+btnSize, btnY); ctx.lineTo(btnX+btnSize, btnY+btnSize); ctx.lineTo(btnX, btnY+btnSize); ctx.stroke();
-            
-            ctx.strokeStyle = '#000000'; ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.moveTo(btnX+10, btnY+10); ctx.lineTo(btnX+btnSize-10, btnY+btnSize-10); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(btnX+btnSize-10, btnY+10); ctx.lineTo(btnX+10, btnY+btnSize-10); ctx.stroke();
-
-            // Content Area
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(winX + 16, winY + 80, winW - 32, winH - 140);
-            
-            // Content Bevels (Inset)
-            ctx.strokeStyle = '#808080'; ctx.beginPath(); ctx.moveTo(winX+16, winY+winH-60); ctx.lineTo(winX+16, winY+80); ctx.lineTo(winX+winW-16, winY+80); ctx.stroke();
-            ctx.strokeStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(winX+winW-16, winY+80); ctx.lineTo(winX+winW-16, winY+winH-60); ctx.lineTo(winX+16, winY+winH-60); ctx.stroke();
-
-            // Image
-            const contentW = winW - 64;
-            const contentH = winH - 240; 
-            const scale = Math.min(contentW / resultImg.width, contentH / resultImg.height);
-            const drawW = resultImg.width * scale;
-            const drawH = resultImg.height * scale;
-            ctx.drawImage(resultImg, winX + 32 + (contentW-drawW)/2, winY + 100, drawW, drawH);
-
-            // Progress Bar
-            ctx.fillStyle = text; // dark blue
-            ctx.fillRect(winX + 32, winY + winH - 100, 240, 35);
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '22px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText("Loading... 100%", winX + 152, winY + winH - 75);
-
-            drawDoodle(ctx, "💿", 180, 180, 120);
-            drawDoodle(ctx, "👾", width - 180, 1650, 120);
-          }
+           else if (templateId === 'street') {
+              ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height); ctx.fillStyle = '#000'; ctx.globalAlpha = 0.08; for(let i=0; i<10000; i++) ctx.fillRect(Math.random()*width, Math.random()*height, 2, 2); ctx.globalAlpha = 1.0;
+              ctx.save(); ctx.translate(width/2, 250); ctx.rotate(-5 * Math.PI / 180); ctx.font = '900 160px "Inter", sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 25; ctx.strokeStyle = '#000'; ctx.strokeText("TRY ON", 0, -80); ctx.strokeText("THE GO", 0, 80); ctx.fillStyle = '#22c55e'; ctx.fillText("TRY ON", 0, -80); ctx.fillStyle = '#ef4444'; ctx.fillText("THE GO", 0, 80); ctx.restore();
+              const fW = 800; const fH = 950; const fX = (width - fW)/2; const fY = 480;
+              ctx.fillStyle = '#1c1917'; drawRoundedRect(ctx, fX - 10, fY - 10, fW + 20, fH + 20, 10); ctx.fill();
+              ctx.save(); drawRoundedRect(ctx, fX, fY, fW, fH, 4); ctx.clip(); const scaleR = Math.max(fW/resultImg.width, fH/resultImg.height); ctx.drawImage(resultImg, fX + (fW-resultImg.width*scaleR)/2, fY, resultImg.width*scaleR, resultImg.height*scaleR); ctx.restore();
+              ctx.font = 'italic 40px serif'; ctx.fillStyle = '#000'; ctx.textAlign = 'left'; ctx.fillText("M.", fX + 60, fY + fH - 60);
+              const bY = height - 350; const rad = 120;
+              if (baseImg) { const cx = 300; ctx.save(); ctx.beginPath(); ctx.arc(cx, bY, rad, 0, Math.PI*2); ctx.clip(); const scaleB = Math.max((rad*2)/baseImg.width, (rad*2)/baseImg.height); ctx.drawImage(baseImg, cx - baseImg.width*scaleB/2, bY - baseImg.height*scaleB/2, baseImg.width*scaleB, baseImg.height*scaleB); ctx.restore(); ctx.beginPath(); ctx.arc(cx, bY, rad, 0, Math.PI*2); ctx.lineWidth = 10; ctx.strokeStyle = '#1c1917'; ctx.stroke(); ctx.font = '900 40px "Inter", sans-serif'; ctx.fillStyle = '#1c1917'; ctx.textAlign = 'center'; ctx.fillText("ME", cx, bY + rad + 50); }
+              ctx.font = '900 100px "Inter", sans-serif'; ctx.fillStyle = '#1c1917'; ctx.textAlign = 'center'; ctx.fillText("=", width/2, bY + 30);
+              if (garmentImg) { const cx = width - 300; ctx.save(); ctx.beginPath(); ctx.arc(cx, bY, rad, 0, Math.PI*2); ctx.clip(); ctx.fillStyle = '#fff'; ctx.fill(); const scaleG = Math.min((rad*1.5)/garmentImg.width, (rad*1.5)/garmentImg.height); ctx.drawImage(garmentImg, cx - garmentImg.width*scaleG/2, bY - garmentImg.height*scaleG/2, garmentImg.width*scaleG, garmentImg.height*scaleG); ctx.restore(); ctx.beginPath(); ctx.arc(cx, bY, rad, 0, Math.PI*2); ctx.lineWidth = 10; ctx.strokeStyle = '#1c1917'; ctx.stroke(); ctx.font = '900 40px "Inter", sans-serif'; ctx.fillStyle = '#1c1917'; ctx.fillText("FIT", cx, bY + rad + 50); }
+           }
+           else if (templateId === 'editorial') {
+              ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height);
+              ctx.font = 'italic 180px "Instrument Serif", serif'; ctx.fillStyle = text; ctx.textAlign = 'center'; ctx.fillText("VOGUE", width/2, 220); ctx.font = '40px "Inter", sans-serif'; ctx.letterSpacing = '10px'; ctx.fillText("DIGITAL COLLECTION", width/2, 280); ctx.letterSpacing = '0px';
+              const mainW = 900; const mainH = 1100; const mainX = (width - mainW)/2; const mainY = 350;
+              ctx.fillStyle = '#e5e5e5'; ctx.fillRect(mainX + 20, mainY + 20, mainW, mainH);
+              ctx.save(); ctx.beginPath(); ctx.rect(mainX, mainY, mainW, mainH); ctx.clip(); const scaleR = Math.max(mainW/resultImg.width, mainH/resultImg.height); ctx.drawImage(resultImg, mainX + (mainW-resultImg.width*scaleR)/2, mainY, resultImg.width*scaleR, resultImg.height*scaleR); ctx.restore();
+              ctx.strokeStyle = text; ctx.lineWidth = 2; ctx.strokeRect(mainX, mainY, mainW, mainH);
+              const bY = mainY + mainH + 100; ctx.font = '30px "Instrument Serif", serif'; ctx.textAlign = 'left'; ctx.fillText("Model Ref: 001", 100, bY); ctx.fillText("Fit Ref: #AG24", 100, bY + 40);
+              if(baseImg) { const r = 80; ctx.save(); ctx.beginPath(); ctx.arc(width - 250, bY + r, r, 0, Math.PI*2); ctx.clip(); const s = Math.max(2*r/baseImg.width, 2*r/baseImg.height); ctx.drawImage(baseImg, width - 250 - baseImg.width*s/2, bY + r - baseImg.height*s/2, baseImg.width*s, baseImg.height*s); ctx.restore(); ctx.beginPath(); ctx.arc(width - 250, bY + r, r, 0, Math.PI*2); ctx.stroke(); }
+              if(garmentImg) { const r = 80; ctx.save(); ctx.beginPath(); ctx.arc(width - 80, bY + r, r, 0, Math.PI*2); ctx.clip(); const s = Math.max(2*r/garmentImg.width, 2*r/garmentImg.height); ctx.drawImage(garmentImg, width - 80 - garmentImg.width*s/2, bY + r - garmentImg.height*s/2, garmentImg.width*s, garmentImg.height*s); ctx.restore(); ctx.beginPath(); ctx.arc(width - 80, bY + r, r, 0, Math.PI*2); ctx.stroke(); }
+           }
+           else if (templateId === 'retro') {
+               ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height); ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.05; for(let i=0; i<50000; i++) ctx.fillRect(Math.random()*width, Math.random()*height, 2, 2); ctx.globalAlpha = 1.0;
+               ctx.font = 'bold 40px monospace'; ctx.fillStyle = '#f43f5e'; ctx.shadowColor = '#f43f5e'; ctx.shadowBlur = 10; ctx.textAlign = 'left'; ctx.fillText("REC ●", 60, 100); ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.textAlign = 'right'; ctx.fillText(new Date().toLocaleDateString(), width - 60, 100);
+               const pW = 800; const pH = 900; const borderT = 40; const borderB = 180; const borderS = 40; const totalW = pW + borderS*2; const totalH = pH + borderT + borderB;
+               ctx.save(); ctx.translate(width/2, height/2 - 100); ctx.rotate(-2 * Math.PI / 180); ctx.fillStyle = '#fafafa'; ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 40; ctx.fillRect(-totalW/2, -totalH/2, totalW, totalH); ctx.shadowBlur = 0;
+               const imgX = -pW/2; const imgY = -totalH/2 + borderT; ctx.save(); ctx.beginPath(); ctx.rect(imgX, imgY, pW, pH); ctx.clip(); const scaleR = Math.max(pW/resultImg.width, pH/resultImg.height); ctx.drawImage(resultImg, imgX + (pW-resultImg.width*scaleR)/2, imgY, resultImg.width*scaleR, resultImg.height*scaleR); const grad = ctx.createLinearGradient(imgX, imgY, imgX, imgY+pH); grad.addColorStop(0, 'rgba(255,100,100,0.1)'); grad.addColorStop(1, 'rgba(0,0,50,0.2)'); ctx.fillStyle = grad; ctx.fillRect(imgX, imgY, pW, pH); ctx.restore(); ctx.font = '40px cursive'; ctx.fillStyle = '#333'; ctx.textAlign = 'center'; ctx.fillText("Try on the Go", 0, totalH/2 - 80); ctx.restore();
+               const stripY = height - 300; const filmH = 200; ctx.fillStyle = '#000'; ctx.fillRect(0, stripY, width, filmH); ctx.fillStyle = '#fff'; for(let x=20; x<width; x+=60) { ctx.fillRect(x, stripY + 10, 30, 20); ctx.fillRect(x, stripY + filmH - 30, 30, 20); }
+               if(baseImg) { const h = filmH - 60; const w = h * (baseImg.width/baseImg.height); ctx.drawImage(baseImg, 100, stripY + 30, w, h); }
+               if(garmentImg) { const h = filmH - 60; const w = h * (garmentImg.width/garmentImg.height); ctx.drawImage(garmentImg, 400, stripY + 30, w, h); }
+           }
+           else if (templateId === 'pop') {
+              ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height); ctx.fillStyle = secondary; ctx.globalAlpha = 0.2; for(let x=0; x<width; x+=30) { for(let y=0; y<height; y+=30) { if((Math.floor(x/30)+Math.floor(y/30)) % 2 === 0) { ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2); ctx.fill(); } } } ctx.globalAlpha = 1.0;
+              ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(width/2, 200, 300, 120, 0, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 8; ctx.stroke();
+              ctx.font = '900 100px "Inter", sans-serif'; ctx.fillStyle = text; ctx.textAlign = 'center'; ctx.fillText("FRESH FIT", width/2, 230);
+              const cx = width/2; const cy = height/2 + 50; ctx.fillStyle = accent; ctx.beginPath(); for(let i=0; i<20; i++) { const angle = (i/20)*Math.PI*2; const rOut = 600; const rIn = 450; ctx.lineTo(cx + Math.cos(angle)*rOut, cy + Math.sin(angle)*rOut); ctx.lineTo(cx + Math.cos(angle + Math.PI/20)*rIn, cy + Math.sin(angle + Math.PI/20)*rIn); } ctx.closePath(); ctx.fill(); ctx.stroke();
+              const iW = 700; const iH = 900; const iX = cx - iW/2; const iY = cy - iH/2; ctx.fillStyle = '#000'; ctx.fillRect(iX + 30, iY + 30, iW, iH); ctx.save(); ctx.beginPath(); ctx.rect(iX, iY, iW, iH); ctx.clip(); const s = Math.max(iW/resultImg.width, iH/resultImg.height); ctx.drawImage(resultImg, iX + (iW-resultImg.width*s)/2, iY, resultImg.width*s, resultImg.height*s); ctx.restore(); ctx.strokeRect(iX, iY, iW, iH);
+              if(baseImg) { const s = 300; const sx = 100; const sy = height - 400; ctx.save(); ctx.translate(sx+s/2, sy+s/2); ctx.rotate(-15 * Math.PI/180); ctx.fillStyle = '#fff'; ctx.fillRect(-s/2 - 10, -s/2 - 10, s+20, s+20); ctx.strokeRect(-s/2 - 10, -s/2 - 10, s+20, s+20); ctx.drawImage(baseImg, -s/2, -s/2, s, s); ctx.restore(); }
+              if(garmentImg) { const s = 300; const sx = width - 400; const sy = height - 400; ctx.save(); ctx.translate(sx+s/2, sy+s/2); ctx.rotate(15 * Math.PI/180); ctx.fillStyle = '#fff'; ctx.fillRect(-s/2 - 10, -s/2 - 10, s+20, s+20); ctx.strokeRect(-s/2 - 10, -s/2 - 10, s+20, s+20); ctx.drawImage(garmentImg, -s/2, -s/2, s, s); ctx.restore(); }
+           }
 
           setShareImageUrl(canvas.toDataURL('image/png'));
 
@@ -640,7 +357,7 @@ const Canvas: React.FC<CanvasProps> = ({
   };
   
   return (
-    <div className="w-full h-full flex items-center justify-center p-4 md:p-8 relative">
+    <div className="w-full h-full flex items-center justify-center relative pt-24 pb-36 px-4 md:pt-20 md:pb-10 md:pr-8">
       
       {/* Back Button - Floating Glass */}
       <button 
@@ -651,7 +368,7 @@ const Canvas: React.FC<CanvasProps> = ({
           <span className="font-medium text-sm">Exit Studio</span>
       </button>
 
-      {/* Top Right Actions */}
+      {/* Top Right Actions - Positioned absolutely relative to the main workspace */}
       <div className="absolute top-6 right-6 z-30 flex gap-2">
          {/* Rate My Fit */}
          <button
@@ -730,7 +447,7 @@ const Canvas: React.FC<CanvasProps> = ({
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
-            className="relative h-full max-h-[85vh] w-auto aspect-auto rounded-2xl overflow-hidden shadow-2xl ring-1 ring-black/5 dark:ring-white/5 bg-white dark:bg-stone-900"
+            className="relative h-full max-h-full w-auto aspect-auto rounded-2xl overflow-hidden shadow-2xl ring-1 ring-black/5 dark:ring-white/5 bg-white dark:bg-stone-900"
           >
             <img
                 src={displayImageUrl}
@@ -759,45 +476,48 @@ const Canvas: React.FC<CanvasProps> = ({
           )}
         </AnimatePresence>
 
-        {/* Floating Pose Controls */}
+        {/* Floating Pose Controls - Enhanced Thumbnail Gallery */}
         {displayImageUrl && !isLoading && (
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-30">
+            <div className="absolute bottom-8 left-0 right-0 z-30 px-4 flex justify-center pointer-events-none">
                 <motion.div 
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
-                    className="flex items-center gap-3 bg-white/70 dark:bg-stone-900/70 backdrop-blur-xl p-2 pl-4 rounded-full border border-white/50 dark:border-stone-700 shadow-lg hover:bg-white/90 dark:hover:bg-stone-900/90 transition-colors"
+                    className="pointer-events-auto flex items-center gap-4 bg-gray-900/90 dark:bg-black/90 backdrop-blur-xl p-4 rounded-3xl border border-white/10 shadow-2xl overflow-x-auto max-w-full mx-auto"
                 >
-                    <span className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-widest mr-2">Pose</span>
-                    
-                    <div className="flex items-center gap-1">
-                        {poseInstructions.map((_, index) => (
+                    {poseInstructions.map((instruction, index) => {
+                        const isGenerated = !!generatedPoses[instruction];
+                        const isSelected = index === currentPoseIndex;
+                        const url = generatedPoses[instruction];
+
+                        return (
                             <button
                                 key={index}
                                 onClick={() => onSelectPose(index)}
-                                className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                                    index === currentPoseIndex 
-                                    ? 'bg-gray-900 dark:bg-stone-100 w-6' 
-                                    : 'bg-gray-300 dark:bg-stone-600 hover:bg-gray-400 dark:hover:bg-stone-500'
-                                }`}
-                                aria-label={`Select pose ${index + 1}`}
-                            />
-                        ))}
-                    </div>
+                                className={`relative group flex-shrink-0 flex flex-col items-center gap-2 transition-all duration-300 ${isSelected ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}
+                            >
+                                <div className={`w-16 h-24 rounded-xl overflow-hidden border-2 transition-all relative ${isSelected ? 'border-white shadow-lg scale-105' : 'border-white/10 hover:border-white/30'}`}>
+                                    {isGenerated ? (
+                                        <img src={url} alt={POSE_SHORT_LABELS[index]} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full bg-white/5 flex items-center justify-center">
+                                            <SparklesIcon className="w-6 h-6 text-white/40" />
+                                        </div>
+                                    )}
 
-                    <div className="h-6 w-px bg-gray-200 dark:bg-stone-700 mx-2"></div>
-
-                    <button 
-                        onClick={() => onSelectPose((currentPoseIndex + 1) % poseInstructions.length)}
-                        className="p-2 rounded-full bg-gray-100 dark:bg-stone-800 hover:bg-gray-200 dark:hover:bg-stone-700 transition-colors text-gray-900 dark:text-stone-100"
-                    >
-                        <RotateCcwIcon className="w-4 h-4" />
-                    </button>
+                                    {/* Loading State Overlay */}
+                                    {isLoading && isSelected && (
+                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                            <Spinner className="w-6 h-6 text-white" />
+                                        </div>
+                                    )}
+                                </div>
+                                <span className={`text-[10px] font-medium tracking-wider uppercase ${isSelected ? 'text-white' : 'text-gray-400'}`}>
+                                    {POSE_SHORT_LABELS[index] || `Pose ${index + 1}`}
+                                </span>
+                            </button>
+                        )
+                    })}
                 </motion.div>
-                <div className="text-center mt-3">
-                     <span className="text-xs font-medium text-gray-500 dark:text-stone-400 bg-white/50 dark:bg-stone-900/50 backdrop-blur px-3 py-1 rounded-full border border-white/20 dark:border-stone-800">
-                        {poseInstructions[currentPoseIndex]}
-                     </span>
-                </div>
             </div>
         )}
       </div>
@@ -863,7 +583,7 @@ const Canvas: React.FC<CanvasProps> = ({
                     className="relative bg-transparent w-full max-w-md flex flex-col gap-4 pointer-events-auto h-full max-h-[90vh]"
                  >
                      {/* Modern Template Selector (Floating Dock Style) */}
-                     <div className="bg-black/80 backdrop-blur-xl rounded-full p-1.5 flex flex-wrap items-center justify-center gap-2 shadow-2xl z-10 mx-auto border border-white/10">
+                     <div className="bg-black/80 backdrop-blur-xl rounded-full p-1.5 flex flex-wrap items-center justify-center gap-2 shadow-2xl z-10 mx-auto border border-white/10 overflow-x-auto max-w-full custom-scrollbar">
                         {SHARE_TEMPLATES.map(t => {
                             const Icon = t.icon;
                             const isActive = activeTemplate === t.id;

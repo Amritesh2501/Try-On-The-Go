@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -67,7 +66,7 @@ const model = 'gemini-2.5-flash-image';
 export const generateModelImage = async (userImage: File): Promise<string> => {
     const userImagePart = await fileToPart(userImage);
     const systemInstruction = "You are an expert fashion photographer AI. Your goal is to transform regular photos into professional e-commerce model shots.";
-    const prompt = "Transform the person in this image into a full-body fashion model photo suitable for an e-commerce website. The background must be a clean, neutral stone-colored studio backdrop. The person should have a neutral, professional model expression. Preserve the person's identity, unique features, and body type, but place them in a standard, relaxed standing model pose. The final image must be photorealistic. Return ONLY the final image.";
+    const prompt = "Transform the person in this image into a full-body fashion model photo suitable for a high-end e-commerce website. The background must be a clean, matte, neutral-toned high-fashion studio backdrop (soft beige or cool grey) with professional soft-box lighting. Ensure the background is solid and distraction-free to make the subject pop. The person should have a neutral, professional model expression. Preserve the person's identity, unique features, and body type, but place them in a standard, relaxed standing model pose. The final image must be photorealistic. Return ONLY the final image.";
     
     const response = await ai.models.generateContent({
         model,
@@ -102,6 +101,47 @@ export const generateVirtualTryOnImage = async (modelImageUrl: string, garmentIm
         model,
         // The order of parts implies the inputs referenced in the prompt
         contents: { parts: [modelImagePart, garmentImagePart, { text: prompt }] },
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+            systemInstruction
+        },
+    });
+    return handleApiResponse(response);
+};
+
+export const generateMultiGarmentTryOn = async (modelImageUrl: string, garmentFiles: File[]): Promise<string> => {
+    const modelImagePart = dataUrlToPart(modelImageUrl);
+    // Convert all garment files to parts in parallel
+    const garmentParts = await Promise.all(garmentFiles.map(f => fileToPart(f)));
+    
+    const systemInstruction = "You are an expert virtual stylist and visual editor. You specialize in dressing models in complete outfits composed of multiple distinct items.";
+
+    let prompt = `Compose a complete outfit on the model.
+
+    Input Image 1: The Base Model.
+    `;
+    
+    // Add references for the prompt
+    garmentParts.forEach((_, index) => {
+        prompt += `Input Image ${index + 2}: Garment Item ${index + 1}.\n`;
+    });
+
+    prompt += `
+    Instructions:
+    1. Dress the Base Model (Image 1) in ALL the provided Garment Items (Images 2-${garmentParts.length + 1}) simultaneously.
+    2. Intelligence: Determine logically where each item goes (e.g., shoes on feet, pants on legs, shirt on torso, hat on head).
+    3. Layering: Ensure items are layered correctly (e.g., shirts tucked into pants if appropriate, jackets over shirts).
+    4. Realism: Apply realistic fabric physics, shadows, and lighting to match the model's environment. The items must look like they are worn, not just pasted.
+    5. CRITICAL: Preserve the Model's face, identity, skin tone, and the original background.
+    6. Return ONLY the final generated image.
+    `;
+
+    // Construct the parts array: Model first, then all garments, then the prompt
+    const parts = [modelImagePart, ...garmentParts, { text: prompt }];
+
+    const response = await ai.models.generateContent({
+        model,
+        contents: { parts },
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
             systemInstruction

@@ -5,12 +5,13 @@
 */
 import React, { useState, useRef } from 'react';
 import type { WardrobeItem } from '../types';
-import { CheckCircleIcon, PlusIcon, ShirtIcon, Trash2Icon, CameraIcon, LinkIcon, XIcon, UploadCloudIcon } from './icons';
+import { CheckCircleIcon, PlusIcon, ShirtIcon, Trash2Icon, CameraIcon, LinkIcon, XIcon, UploadCloudIcon, MaximizeIcon } from './icons';
 import Spinner from './Spinner';
 import { AnimatePresence, motion } from 'framer-motion';
 
 interface WardrobePanelProps {
   onGarmentSelect: (garmentFile: File, garmentInfo: WardrobeItem) => void;
+  onMultiGarmentSelect?: (items: { file: File, info: WardrobeItem }[]) => void;
   activeGarmentIds: string[];
   isLoading: boolean;
   wardrobe: WardrobeItem[];
@@ -56,13 +57,18 @@ const urlToFile = async (url: string, filename: string): Promise<File> => {
     }
 };
 
-const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGarmentIds, isLoading, wardrobe, onRemoveGarment }) => {
+const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiGarmentSelect, activeGarmentIds, isLoading, wardrobe, onRemoveGarment }) => {
     const [error, setError] = useState<string | null>(null);
     const [preparingItemId, setPreparingItemId] = useState<string | null>(null);
     const [selectedItem, setSelectedItem] = useState<WardrobeItem | null>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [hoveredItem, setHoveredItem] = useState<WardrobeItem | null>(null);
+
+    // Multi-Select State
+    const [isMultiMode, setIsMultiMode] = useState(false);
+    const [multiSelection, setMultiSelection] = useState<WardrobeItem[]>([]);
+    const [isProcessingMulti, setIsProcessingMulti] = useState(false);
 
     // Modal States
     const [addMode, setAddMode] = useState<'select' | 'camera' | 'link'>('select');
@@ -71,10 +77,23 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
     const videoRef = useRef<HTMLVideoElement>(null);
 
     const handleItemClick = (item: WardrobeItem) => {
-        if (isLoading) return; // Allow clicking even if active
-        setSelectedItem(item);
-        setSelectedFile(null); // Clear custom file if switching to preset
-        setError(null);
+        if (isLoading) return; 
+
+        if (isMultiMode) {
+            // Toggle selection in multi mode
+            setMultiSelection(prev => {
+                const exists = prev.find(i => i.id === item.id);
+                if (exists) return prev.filter(i => i.id !== item.id);
+                return [...prev, item];
+            });
+            // Clear single selection stuff just in case
+            setSelectedItem(null);
+        } else {
+            // Standard single selection
+            setSelectedItem(item);
+            setSelectedFile(null); // Clear custom file if switching to preset
+            setError(null);
+        }
     };
 
     const handleAddNewClick = () => {
@@ -89,6 +108,12 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
         setLinkUrl('');
     };
 
+    const toggleMultiMode = () => {
+        setIsMultiMode(!isMultiMode);
+        setMultiSelection([]);
+        setSelectedItem(null);
+    };
+
     // --- File Handling ---
     const processFile = (file: File) => {
         if (!file.type.startsWith('image/')) {
@@ -100,9 +125,13 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
             name: file.name,
             url: URL.createObjectURL(file),
         };
-        // Auto-select the new item
-        setSelectedItem(customGarmentInfo);
-        setSelectedFile(file);
+        // Auto-select the new item based on mode
+        if (isMultiMode) {
+            setMultiSelection(prev => [...prev, customGarmentInfo]);
+        } else {
+            setSelectedItem(customGarmentInfo);
+            setSelectedFile(file);
+        }
         handleCloseModal();
     };
 
@@ -174,6 +203,25 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
 
 
     const handleTryOn = async () => {
+        if (isMultiMode) {
+            if (multiSelection.length === 0 || !onMultiGarmentSelect) return;
+            setIsProcessingMulti(true);
+            try {
+                const items = await Promise.all(multiSelection.map(async (item) => {
+                    const file = await urlToFile(item.url, item.name);
+                    return { file, info: item };
+                }));
+                onMultiGarmentSelect(items);
+                setMultiSelection([]);
+                setIsMultiMode(false);
+            } catch (err) {
+                setError("Failed to process selected items.");
+            } finally {
+                setIsProcessingMulti(false);
+            }
+            return;
+        }
+
         if (!selectedItem || isLoading) return;
         
         setPreparingItemId(selectedItem.id);
@@ -196,9 +244,16 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
 
   return (
     <div className="pt-2 pb-24 md:pb-6 relative min-h-[300px]">
-        <h2 className="text-2xl font-serif text-gray-900 dark:text-stone-100 mb-6 flex items-center justify-between">
+        <h2 className="text-2xl font-serif text-gray-900 dark:text-stone-100 mb-4 flex items-center justify-between">
             <span>Wardrobe</span>
-            <span className="text-xs font-sans text-gray-400 dark:text-stone-500 font-normal uppercase tracking-wider">Select Item</span>
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={toggleMultiMode}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${isMultiMode ? 'bg-gray-900 text-white dark:bg-stone-100 dark:text-stone-900 shadow-md' : 'bg-gray-200 text-gray-600 dark:bg-stone-800 dark:text-stone-400 hover:bg-gray-300 dark:hover:bg-stone-700'}`}
+                >
+                    {isMultiMode ? 'Builder Mode On' : 'Builder Mode'}
+                </button>
+            </div>
         </h2>
         
         <div className="grid grid-cols-2 gap-4">
@@ -217,6 +272,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
             {wardrobe.map((item) => {
             const isActive = activeGarmentIds.includes(item.id);
             const isSelected = selectedItem?.id === item.id;
+            const isMultiSelected = multiSelection.some(i => i.id === item.id);
             
             return (
                 <div 
@@ -228,7 +284,10 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
                     <button
                         onClick={() => handleItemClick(item)}
                         disabled={isLoading}
-                        className={`w-full aspect-[4/5] rounded-2xl overflow-hidden transition-all duration-300 focus:outline-none disabled:opacity-70 disabled:grayscale ${isSelected ? 'ring-2 ring-gray-900 dark:ring-stone-100 ring-offset-2 dark:ring-offset-stone-900' : ''}`}
+                        className={`w-full aspect-[4/5] rounded-2xl overflow-hidden transition-all duration-300 focus:outline-none disabled:opacity-70 disabled:grayscale relative 
+                            ${isSelected ? 'ring-2 ring-gray-900 dark:ring-stone-100 ring-offset-2 dark:ring-offset-stone-900' : ''}
+                            ${isMultiSelected ? 'ring-4 ring-amber-500 ring-offset-1 dark:ring-offset-stone-900' : ''}
+                        `}
                     >
                     <img src={item.url} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                     
@@ -238,15 +297,22 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
                     </div>
 
                     {/* Active (Worn) State Indicator */}
-                    {isActive && (
+                    {isActive && !isMultiSelected && (
                         <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-[2px] flex items-center justify-center z-20 group-hover:bg-gray-900/40 transition-colors">
                             <CheckCircleIcon className="w-8 h-8 text-white drop-shadow-md" />
+                        </div>
+                    )}
+
+                    {/* Multi-Select Badge */}
+                    {isMultiSelected && (
+                        <div className="absolute top-2 right-2 w-6 h-6 bg-amber-500 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md z-20">
+                            {multiSelection.findIndex(i => i.id === item.id) + 1}
                         </div>
                     )}
                     </button>
 
                     {/* Delete Button */}
-                    {onRemoveGarment && (
+                    {onRemoveGarment && !isMultiMode && (
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -264,25 +330,33 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
             })}
         </div>
         
-        {/* Floating Try-On Button */}
-        {selectedItem && (
+        {/* Floating Try-On / Build Button */}
+        {(selectedItem || (isMultiMode && multiSelection.length > 0)) && (
              <div className="fixed md:absolute bottom-6 md:bottom-0 left-0 right-0 p-4 md:p-0 z-50 animate-fade-in-up">
                 <div className="max-w-md mx-auto md:max-w-none">
                     <button
                         onClick={handleTryOn}
-                        disabled={isLoading || preparingItemId !== null}
-                        className="w-full bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 font-serif text-lg py-4 rounded-full shadow-xl hover:bg-black dark:hover:bg-white hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+                        disabled={isLoading || preparingItemId !== null || isProcessingMulti}
+                        className={`w-full font-serif text-lg py-4 rounded-full shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 ${isMultiMode ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:bg-black dark:hover:bg-white'}`}
                     >
-                        {preparingItemId ? (
+                        {(preparingItemId || isProcessingMulti) ? (
                             <>
                                 <Spinner className="animate-spin h-5 w-5 text-current" />
                                 <span className="ml-2">Preparing...</span>
+                            </>
+                        ) : isMultiMode ? (
+                            <>
+                                <div className="flex -space-x-2">
+                                    <div className="w-4 h-4 rounded-full bg-white/30 border border-white"></div>
+                                    <div className="w-4 h-4 rounded-full bg-white/50 border border-white"></div>
+                                </div>
+                                <span>Mix & Match ({multiSelection.length})</span>
                             </>
                         ) : (
                             <>
                                 <ShirtIcon className="w-5 h-5" />
                                 <span>
-                                    {activeGarmentIds.includes(selectedItem.id) ? 'Try Again' : `Try On ${selectedItem.name}`}
+                                    {activeGarmentIds.includes(selectedItem!.id) ? 'Try Again' : `Try On ${selectedItem!.name}`}
                                 </span>
                             </>
                         )}
