@@ -357,7 +357,7 @@ const Canvas: React.FC<CanvasProps> = ({
   };
   
   return (
-    <div className="w-full h-full flex items-center justify-center relative pt-24 pb-36 px-4 md:pt-20 md:pb-10 md:pr-8">
+    <div className="w-full h-full flex items-center justify-center relative pt-24 pb-40 px-4 md:pt-20 md:pb-40 md:pr-8">
       
       {/* Back Button - Floating Glass */}
       <button 
@@ -462,11 +462,11 @@ const Canvas: React.FC<CanvasProps> = ({
         )}
         </AnimatePresence>
         
-        {/* Loading Overlay */}
+        {/* Loading Overlay - Subtle Glass Effect over previous image */}
         <AnimatePresence>
           {isLoading && (
               <motion.div
-                  className="absolute inset-0 flex items-center justify-center z-40 bg-white/80 dark:bg-black/80 backdrop-blur-sm rounded-2xl"
+                  className="absolute inset-0 flex items-center justify-center z-40 bg-white/40 dark:bg-black/40 backdrop-blur-md rounded-2xl"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -475,10 +475,11 @@ const Canvas: React.FC<CanvasProps> = ({
               </motion.div>
           )}
         </AnimatePresence>
+      </div>
 
-        {/* Floating Pose Controls - Enhanced Thumbnail Gallery */}
-        {displayImageUrl && !isLoading && (
-            <div className="absolute bottom-8 left-0 right-0 z-30 px-4 flex justify-center pointer-events-none">
+      {/* Floating Pose Controls - Enhanced Thumbnail Gallery - Moved to root for z-index/fixed positioning */}
+      {displayImageUrl && (
+            <div className="absolute bottom-6 left-0 right-0 z-30 px-4 flex justify-center pointer-events-none">
                 <motion.div 
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
@@ -504,10 +505,12 @@ const Canvas: React.FC<CanvasProps> = ({
                                         </div>
                                     )}
 
-                                    {/* Loading State Overlay */}
+                                    {/* Loading State Overlay for Poses */}
                                     {isLoading && isSelected && (
-                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                            <Spinner className="w-6 h-6 text-white" />
+                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                           {/* Animated Gradient Border effect */}
+                                            <div className="absolute inset-0 border-2 border-transparent rounded-xl animate-[spin_2s_linear_infinite]" style={{ background: 'linear-gradient(white, transparent) border-box', WebkitMask: 'linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0)' }}></div>
+                                            <Spinner className="w-6 h-6 text-white relative z-10" />
                                         </div>
                                     )}
                                 </div>
@@ -519,8 +522,7 @@ const Canvas: React.FC<CanvasProps> = ({
                     })}
                 </motion.div>
             </div>
-        )}
-      </div>
+      )}
 
       {/* Style Advisor Modal */}
       <AnimatePresence>

@@ -15,3 +15,12 @@ export interface OutfitLayer {
   garments?: WardrobeItem[]; // For multi-garment layers
   poseImages: Record<string, string>; // Maps pose instruction to image URL
 }
+
+export interface StyleAdvice {
+  score: number;
+  verdict: string;
+  fitAnalysis: string;
+  colorCoordination: string;
+  occasion: string;
+  accessory: string;
+}

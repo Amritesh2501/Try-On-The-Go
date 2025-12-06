@@ -5,9 +5,10 @@
 */
 import React, { useState, useRef } from 'react';
 import type { WardrobeItem } from '../types';
-import { CheckCircleIcon, PlusIcon, ShirtIcon, Trash2Icon, CameraIcon, LinkIcon, XIcon, UploadCloudIcon, MaximizeIcon } from './icons';
+import { CheckCircleIcon, PlusIcon, ShirtIcon, Trash2Icon, CameraIcon, LinkIcon, XIcon, UploadCloudIcon, MaximizeIcon, SparklesIcon } from './icons';
 import Spinner from './Spinner';
 import { AnimatePresence, motion } from 'framer-motion';
+import { generateGarmentFromText } from '../services/geminiService';
 
 interface WardrobePanelProps {
   onGarmentSelect: (garmentFile: File, garmentInfo: WardrobeItem) => void;
@@ -71,8 +72,10 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
     const [isProcessingMulti, setIsProcessingMulti] = useState(false);
 
     // Modal States
-    const [addMode, setAddMode] = useState<'select' | 'camera' | 'link'>('select');
+    const [addMode, setAddMode] = useState<'select' | 'camera' | 'link' | 'generate'>('select');
     const [linkUrl, setLinkUrl] = useState('');
+    const [generatePrompt, setGeneratePrompt] = useState('');
+    const [isGenerating, setIsGenerating] = useState(false);
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -100,12 +103,15 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
         setIsAddModalOpen(true);
         setAddMode('select');
         setError(null);
+        setGeneratePrompt('');
     };
 
     const handleCloseModal = () => {
         setIsAddModalOpen(false);
         stopCamera();
         setLinkUrl('');
+        setGeneratePrompt('');
+        setIsGenerating(false);
     };
 
     const toggleMultiMode = () => {
@@ -122,7 +128,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
         }
         const customGarmentInfo: WardrobeItem = {
             id: `custom-${Date.now()}`,
-            name: file.name,
+            name: file.name.replace(/\.[^/.]+$/, ""), // remove extension
             url: URL.createObjectURL(file),
         };
         // Auto-select the new item based on mode
@@ -201,6 +207,22 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
         }
     };
 
+    // --- AI Generator Logic ---
+    const handleGenerateSubmit = async () => {
+        if (!generatePrompt) return;
+        setIsGenerating(true);
+        setError(null);
+        try {
+            const imageUrl = await generateGarmentFromText(generatePrompt);
+            const file = await urlToFile(imageUrl, `generated-${generatePrompt.slice(0, 10)}.png`);
+            processFile(file);
+        } catch (err: any) {
+             setError(err.message || 'Failed to generate garment.');
+        } finally {
+            setIsGenerating(false);
+        }
+    }
+
 
     const handleTryOn = async () => {
         if (isMultiMode) {
@@ -273,6 +295,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
             const isActive = activeGarmentIds.includes(item.id);
             const isSelected = selectedItem?.id === item.id;
             const isMultiSelected = multiSelection.some(i => i.id === item.id);
+            const isPreparing = preparingItemId === item.id;
             
             return (
                 <div 
@@ -287,17 +310,26 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
                         className={`w-full aspect-[4/5] rounded-2xl overflow-hidden transition-all duration-300 focus:outline-none disabled:opacity-70 disabled:grayscale relative 
                             ${isSelected ? 'ring-2 ring-gray-900 dark:ring-stone-100 ring-offset-2 dark:ring-offset-stone-900' : ''}
                             ${isMultiSelected ? 'ring-4 ring-amber-500 ring-offset-1 dark:ring-offset-stone-900' : ''}
+                            ${isPreparing ? 'ring-2 ring-cyan-500 ring-offset-2' : ''}
                         `}
                     >
                     <img src={item.url} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                     
+                    {/* Preparing Shimmer Overlay */}
+                    {isPreparing && (
+                        <div className="absolute inset-0 bg-white/30 dark:bg-black/30 backdrop-blur-sm z-30 flex items-center justify-center">
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-[shimmer_1.5s_infinite] -skew-x-12" />
+                            <Spinner className="w-6 h-6 text-gray-900 dark:text-white relative z-10" />
+                        </div>
+                    )}
+
                     {/* Overlay Gradient */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
                         <p className="text-white text-sm font-medium text-left">{item.name}</p>
                     </div>
 
                     {/* Active (Worn) State Indicator */}
-                    {isActive && !isMultiSelected && (
+                    {isActive && !isMultiSelected && !isPreparing && (
                         <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-[2px] flex items-center justify-center z-20 group-hover:bg-gray-900/40 transition-colors">
                             <CheckCircleIcon className="w-8 h-8 text-white drop-shadow-md" />
                         </div>
@@ -312,7 +344,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
                     </button>
 
                     {/* Delete Button */}
-                    {onRemoveGarment && !isMultiMode && (
+                    {onRemoveGarment && !isMultiMode && !isPreparing && (
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -342,7 +374,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
                         {(preparingItemId || isProcessingMulti) ? (
                             <>
                                 <Spinner className="animate-spin h-5 w-5 text-current" />
-                                <span className="ml-2">Preparing...</span>
+                                <span className="ml-2">Processing...</span>
                             </>
                         ) : isMultiMode ? (
                             <>
@@ -367,7 +399,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
 
         {/* Hover Preview - Large floating preview card */}
         <AnimatePresence>
-            {hoveredItem && (
+            {hoveredItem && !preparingItemId && (
                 <motion.div
                     initial={{ opacity: 0, scale: 0.9, x: 20 }}
                     animate={{ opacity: 1, scale: 1, x: 0 }}
@@ -416,21 +448,32 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
                         </div>
 
                         {/* Content */}
-                        <div className="p-6 flex flex-col items-center">
+                        <div className="p-6 flex flex-col items-center overflow-y-auto">
                             {addMode === 'select' && (
-                                <div className="flex gap-4 w-full">
-                                    <label className="flex-1 flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 border-dashed border-gray-200 dark:border-stone-700 hover:border-gray-900 dark:hover:border-stone-400 cursor-pointer bg-gray-50 dark:bg-stone-800 transition-colors">
-                                        <UploadCloudIcon className="w-8 h-8 text-gray-400 dark:text-stone-500" />
-                                        <span className="text-sm font-medium text-gray-700 dark:text-stone-300">Upload Photo</span>
+                                <div className="grid grid-cols-2 gap-4 w-full">
+                                    <label className="flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 border-dashed border-gray-200 dark:border-stone-700 hover:border-gray-900 dark:hover:border-stone-400 cursor-pointer bg-gray-50 dark:bg-stone-800 transition-colors h-32">
+                                        <UploadCloudIcon className="w-6 h-6 text-gray-400 dark:text-stone-500" />
+                                        <span className="text-xs font-medium text-gray-700 dark:text-stone-300">Upload Photo</span>
                                         <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
                                     </label>
                                     
                                     <button 
                                         onClick={startCamera}
-                                        className="flex-1 flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 border-dashed border-gray-200 dark:border-stone-700 hover:border-gray-900 dark:hover:border-stone-400 bg-gray-50 dark:bg-stone-800 transition-colors"
+                                        className="flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 border-dashed border-gray-200 dark:border-stone-700 hover:border-gray-900 dark:hover:border-stone-400 bg-gray-50 dark:bg-stone-800 transition-colors h-32"
                                     >
-                                        <CameraIcon className="w-8 h-8 text-gray-400 dark:text-stone-500" />
-                                        <span className="text-sm font-medium text-gray-700 dark:text-stone-300">Camera</span>
+                                        <CameraIcon className="w-6 h-6 text-gray-400 dark:text-stone-500" />
+                                        <span className="text-xs font-medium text-gray-700 dark:text-stone-300">Camera</span>
+                                    </button>
+
+                                    <button 
+                                        onClick={() => setAddMode('generate')}
+                                        className="col-span-2 flex flex-row items-center justify-center gap-3 p-6 rounded-2xl border-2 border-dashed border-amber-200 dark:border-amber-900 hover:border-amber-500 dark:hover:border-amber-500 bg-amber-50 dark:bg-amber-900/10 transition-colors h-24"
+                                    >
+                                        <SparklesIcon className="w-6 h-6 text-amber-500" />
+                                        <div className="flex flex-col items-start">
+                                            <span className="text-sm font-bold text-gray-900 dark:text-stone-100">Magic Generate</span>
+                                            <span className="text-[10px] text-gray-500 dark:text-stone-400">Create new clothes with AI</span>
+                                        </div>
                                     </button>
                                 </div>
                             )}
@@ -476,6 +519,46 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, onMultiG
                                             className="px-6 py-2 rounded-full bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 font-medium disabled:opacity-50"
                                         >
                                             Add Item
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {addMode === 'generate' && (
+                                <div className="w-full flex flex-col gap-4">
+                                    <div className="bg-amber-50 dark:bg-amber-900/10 p-4 rounded-xl border border-amber-100 dark:border-amber-900/30">
+                                        <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs uppercase tracking-wider mb-2">
+                                            <SparklesIcon className="w-4 h-4" /> AI Designer
+                                        </div>
+                                        <p className="text-sm text-gray-700 dark:text-stone-300 leading-relaxed">
+                                            Describe a clothing item you want to create. Be specific about color, material, and style.
+                                        </p>
+                                    </div>
+
+                                    <textarea 
+                                        placeholder="E.g., A vintage distressed denim jacket with floral embroidery..." 
+                                        value={generatePrompt}
+                                        onChange={(e) => setGeneratePrompt(e.target.value)}
+                                        className="w-full p-4 rounded-xl border border-gray-200 dark:border-stone-700 bg-gray-50 dark:bg-stone-800 text-gray-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500 min-h-[100px] resize-none"
+                                        disabled={isGenerating}
+                                    />
+                                    
+                                    <div className="flex gap-2 justify-end items-center mt-2">
+                                        <button onClick={() => setAddMode('select')} disabled={isGenerating} className="px-4 py-2 text-gray-500">Back</button>
+                                        <button 
+                                            onClick={handleGenerateSubmit}
+                                            disabled={!generatePrompt || isGenerating}
+                                            className="px-6 py-2 rounded-full bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 font-medium disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {isGenerating ? (
+                                                <>
+                                                    <Spinner className="w-4 h-4" /> Generating...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <SparklesIcon className="w-4 h-4" /> Create
+                                                </>
+                                            )}
                                         </button>
                                     </div>
                                 </div>

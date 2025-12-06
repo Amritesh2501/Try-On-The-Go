@@ -12,6 +12,7 @@ import Spinner from './Spinner';
 import ProcessingLoader from './ProcessingLoader';
 import { getFriendlyErrorMessage } from '../lib/utils';
 import { Compare } from './ui/compare';
+import type { StyleAdvice } from '../types';
 
 interface StartScreenProps {
   onModelFinalized: (modelUrl: string) => void;
@@ -59,7 +60,7 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
   // Style Advisor State
   const [advisorFile, setAdvisorFile] = useState<File | null>(null);
   const [advisorPreview, setAdvisorPreview] = useState<string | null>(null);
-  const [advisorResult, setAdvisorResult] = useState<string | null>(null);
+  const [advisorResult, setAdvisorResult] = useState<StyleAdvice | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isAdvisorCameraOpen, setIsAdvisorCameraOpen] = useState(false);
 
@@ -439,30 +440,40 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
 
   // --- Render: Style Advisor Mode ---
   if (mode === 'style-advisor') {
+      const score = advisorResult?.score || 0;
+      
+      // Calculate color based on score
+      const scoreColor = score >= 8 ? '#10b981' : score >= 5 ? '#f59e0b' : '#ef4444';
+      
+      // Gauge parameters
+      const radius = 80;
+      const circumference = 2 * Math.PI * radius;
+      const progress = (score / 10) * circumference;
+
       return (
           <AnimatePresence mode="wait">
             <motion.div
                 key="style-advisor"
-                className="w-full h-full flex flex-col items-center px-4 md:justify-center relative overflow-hidden"
+                className="w-full h-full flex flex-col items-center px-4 md:justify-center relative overflow-y-auto bg-gray-50 dark:bg-black"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
             >
                 {/* Back Button */}
-                {!isAdvisorCameraOpen && (
+                {!isAdvisorCameraOpen && !advisorResult && !isAnalyzing && (
                     <button 
                         onClick={() => {
                             setMode('selection');
                             resetAdvisor();
                         }}
-                        className="absolute top-0 left-6 z-40 flex items-center gap-2 text-gray-500 dark:text-stone-400 hover:text-gray-900 dark:hover:text-stone-100 transition-colors py-4"
+                        className="absolute top-6 left-6 z-40 flex items-center gap-2 text-gray-500 dark:text-stone-400 hover:text-gray-900 dark:hover:text-stone-100 transition-colors bg-white/10 backdrop-blur-md px-4 py-2 rounded-full"
                     >
                         <ChevronLeftIcon className="w-5 h-5" />
-                        <span>Back to Home</span>
+                        <span className="text-sm font-medium">Back</span>
                     </button>
                 )}
 
-                {/* State: Upload & Analyze */}
+                {/* State 1: Upload & Analyze */}
                 {!advisorResult && !isAnalyzing && !isAdvisorCameraOpen && (
                      <motion.div 
                         key="advisor-upload"
@@ -470,144 +481,281 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, initialImag
                         initial="hidden"
                         animate="visible"
                         exit="hidden"
-                        className="w-full h-full max-w-md flex flex-col items-center justify-between md:justify-center gap-4 py-8 md:py-4 mt-8 md:mt-0"
+                        className="w-full h-full max-w-md flex flex-col items-center justify-center gap-6 py-12"
                      >
-                         <div className="text-center flex-shrink-0">
-                             <h2 className="text-2xl md:text-3xl font-serif text-gray-900 dark:text-stone-50">Rate my Fit</h2>
-                             <p className="text-sm md:text-base text-gray-500 dark:text-stone-400">Upload a photo to get professional style advice.</p>
+                         <div className="text-center flex-shrink-0 mt-8">
+                             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-widest mb-4 border border-amber-500/20">
+                                <SparklesIcon className="w-3 h-3" />
+                                AI Stylist
+                             </div>
+                             <h2 className="text-5xl md:text-6xl font-serif text-gray-900 dark:text-stone-50 mb-4 tracking-tight">Rate my Fit</h2>
+                             <p className="text-sm md:text-base text-gray-500 dark:text-stone-400 max-w-xs mx-auto leading-relaxed">
+                                Upload a photo of your outfit. Our AI will analyze the fit, color, and style.
+                             </p>
                          </div>
                          
-                         <label className="w-full flex-1 min-h-0 md:max-h-[60vh] rounded-3xl border-2 border-dashed border-gray-300 dark:border-stone-700 hover:border-gray-900 dark:hover:border-stone-400 bg-gray-50 dark:bg-stone-900 flex flex-col items-center justify-center cursor-pointer transition-colors group relative overflow-hidden my-4">
-                             {advisorPreview ? (
-                                 <img src={advisorPreview} alt="Advisor Upload" className="w-full h-full object-contain object-center p-2" />
-                             ) : (
-                                 <>
-                                     <div className="p-4 rounded-full bg-white dark:bg-stone-800 shadow-sm mb-4 group-hover:scale-110 transition-transform">
-                                         <PlusIcon className="w-6 h-6 text-gray-400 dark:text-stone-500" />
-                                     </div>
-                                     <span className="text-sm font-medium text-gray-500 dark:text-stone-400">Upload Outfit</span>
-                                 </>
-                             )}
-                             <input type="file" className="hidden" accept="image/*" onChange={handleAdvisorFileChange} />
-                             {advisorPreview && (
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-medium">Change Photo</div>
-                             )}
+                         <div className="w-full aspect-[3/4] max-h-[45vh] relative group cursor-pointer">
+                            <label className="absolute inset-0 w-full h-full rounded-[2.5rem] border-2 border-dashed border-gray-300 dark:border-white/20 hover:border-gray-900 dark:hover:border-white/40 bg-white dark:bg-stone-900/50 flex flex-col items-center justify-center transition-all overflow-hidden shadow-sm hover:shadow-2xl">
+                                {advisorPreview ? (
+                                    <img src={advisorPreview} alt="Advisor Upload" className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="flex flex-col items-center gap-5 p-8 text-center">
+                                        <div className="w-20 h-20 rounded-full bg-gray-50 dark:bg-white/5 flex items-center justify-center border border-gray-100 dark:border-white/10">
+                                            <PlusIcon className="w-8 h-8 text-gray-400 dark:text-white/40" />
+                                        </div>
+                                        <div>
+                                            <p className="font-serif text-2xl text-gray-900 dark:text-white">Upload Photo</p>
+                                            <p className="text-sm text-gray-500 dark:text-white/40 mt-1">Tap to browse gallery</p>
+                                        </div>
+                                    </div>
+                                )}
+                                <input type="file" className="hidden" accept="image/*" onChange={handleAdvisorFileChange} />
+                                
+                                {advisorPreview && (
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
+                                        <span className="bg-white/20 backdrop-blur-xl px-6 py-2.5 rounded-full text-white font-medium border border-white/30">Change Photo</span>
+                                    </div>
+                                )}
+                            </label>
 
-                            {!advisorPreview && (
-                                <div className="absolute bottom-6 z-30 pointer-events-auto">
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); startAdvisorCamera(); }}
-                                        className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-stone-800 hover:bg-gray-200 dark:hover:bg-stone-700 rounded-full text-sm font-medium text-gray-700 dark:text-stone-300 transition-colors shadow-sm"
-                                    >
-                                        <CameraIcon className="w-4 h-4" />
-                                        <span>Use Camera</span>
-                                    </button>
-                                </div>
-                            )}
-                         </label>
+                             {/* Camera FAB */}
+                             {!advisorPreview && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); startAdvisorCamera(); }}
+                                    className="absolute bottom-6 right-6 w-14 h-14 bg-gray-900 dark:bg-white text-white dark:text-stone-950 rounded-full flex items-center justify-center shadow-xl hover:scale-105 transition-transform z-20 border-4 border-white dark:border-stone-950"
+                                >
+                                    <CameraIcon className="w-6 h-6" />
+                                </button>
+                             )}
+                         </div>
 
                          {error && (
-                            <p className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 px-3 py-1 rounded-full border border-red-100 dark:border-red-900">{error}</p>
+                            <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-xl border border-red-100 dark:border-red-900">
+                                {error}
+                            </motion.div>
                          )}
 
                          <button 
                             onClick={executeStyleAnalysis}
                             disabled={!advisorFile}
-                            className="w-full py-4 flex-shrink-0 rounded-full bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+                            className="w-full py-5 rounded-full bg-gray-900 dark:bg-white text-white dark:text-stone-950 font-bold text-lg disabled:opacity-30 disabled:cursor-not-allowed hover:shadow-2xl hover:-translate-y-1 transition-all flex items-center justify-center gap-3 mt-auto mb-6"
                          >
-                             <SparklesIcon className="w-5 h-5" />
-                             <span>Get Advice</span>
+                             <span>Get Analysis</span>
+                             <ChevronRightIcon className="w-5 h-5" />
                          </button>
                      </motion.div>
                 )}
                 
-                 {/* State: Camera View */}
+                 {/* State 2: Camera View */}
                 {isAdvisorCameraOpen && (
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
-                        className="w-full max-w-md aspect-[4/5] md:aspect-square max-h-[70vh] relative bg-black rounded-3xl overflow-hidden shadow-2xl my-auto"
+                        className="w-full h-full flex flex-col items-center justify-center relative bg-black"
                     >
                         <video 
                             ref={videoRef}
                             autoPlay 
                             playsInline 
                             muted
-                            className="w-full h-full object-cover transform -scale-x-100" // Mirror effect
+                            className="w-full h-full object-cover transform -scale-x-100 opacity-80" // Mirror effect
                         />
-                        
-                        <div className="absolute inset-0 pointer-events-none border border-white/20 rounded-3xl z-10"></div>
-                        
+                         
+                        <div className="absolute top-8 left-0 right-0 text-center">
+                             <span className="bg-black/50 backdrop-blur px-4 py-1 rounded-full text-white/80 text-xs uppercase tracking-widest font-medium">Position outfit in frame</span>
+                        </div>
+
                         {/* Camera Controls */}
-                        <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-8 z-20">
+                        <div className="absolute bottom-10 left-0 right-0 flex items-center justify-center gap-12 z-20">
                             <button
                                 onClick={stopAdvisorCamera}
-                                className="p-3 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-full text-white transition-colors"
-                                aria-label="Close Camera"
+                                className="p-4 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-white transition-colors"
                             >
                                 <XIcon className="w-6 h-6" />
                             </button>
                             
                             <button
                                 onClick={captureAdvisorPhoto}
-                                className="p-1 rounded-full border-4 border-white/80 hover:scale-105 transition-transform"
-                                aria-label="Capture Photo"
+                                className="w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center"
                             >
-                                <div className="w-14 h-14 bg-white rounded-full"></div>
+                                <div className="w-16 h-16 bg-white rounded-full hover:scale-95 transition-transform duration-100"></div>
                             </button>
                             
-                            <div className="w-12"></div> {/* Spacer to center the capture button */}
+                            <div className="w-14"></div> {/* Spacer */}
                         </div>
                     </motion.div>
                 )}
 
-                {/* State: Analyzing */}
+                {/* State 3: Analyzing (Scanning Animation) */}
                 {isAnalyzing && (
                     <motion.div 
                         key="analyzing"
                         initial={{ opacity: 0 }} 
                         animate={{ opacity: 1 }} 
-                        className="flex flex-col items-center justify-center h-full w-full"
+                        className="flex flex-col items-center justify-center h-full w-full relative"
                     >
-                        <ProcessingLoader message="Analyzing your style..." subMessage="Our AI stylist is reviewing your fit..." />
+                        <div className="relative w-full max-w-sm aspect-[3/4] rounded-3xl overflow-hidden shadow-2xl">
+                             <img src={advisorPreview!} alt="Scanning" className="w-full h-full object-cover filter grayscale opacity-50" />
+                             <div className="absolute inset-0 bg-green-900/20 mix-blend-overlay" />
+                             
+                             {/* Scanning Line */}
+                             <motion.div 
+                                className="absolute left-0 right-0 h-1 bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.8)] z-10"
+                                animate={{ top: ["0%", "100%", "0%"] }}
+                                transition={{ duration: 3, ease: "linear", repeat: Infinity }}
+                             />
+                             
+                             <div className="absolute bottom-8 left-0 right-0 text-center">
+                                 <motion.div 
+                                    className="inline-block bg-black/70 backdrop-blur-md border border-cyan-500/30 text-cyan-400 px-6 py-2 rounded-full font-mono text-xs uppercase tracking-widest"
+                                    animate={{ opacity: [0.5, 1, 0.5] }}
+                                    transition={{ duration: 1.5, repeat: Infinity }}
+                                 >
+                                     Analyzing Texture...
+                                 </motion.div>
+                             </div>
+                        </div>
                     </motion.div>
                 )}
 
-                {/* State: Result */}
+                {/* State 4: Editorial Result */}
                 {advisorResult && (
                     <motion.div
                         key="advisor-result"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="flex flex-col md:flex-row gap-8 w-full max-w-5xl h-full py-16 md:py-8 px-4"
+                        initial={{ opacity: 0, y: 50 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="w-full h-full flex flex-col items-center justify-center p-0 md:p-6"
                     >
-                        {/* Image Side */}
-                        <div className="flex-1 bg-white dark:bg-stone-900 rounded-3xl p-2 border border-gray-100 dark:border-stone-800 shadow-xl overflow-hidden min-h-[40vh] md:min-h-0">
-                            {advisorPreview && (
-                                <img src={advisorPreview} alt="Analyzed Outfit" className="w-full h-full object-contain rounded-2xl" />
-                            )}
-                        </div>
-
-                        {/* Text Side */}
-                        <div className="flex-1 flex flex-col gap-6 overflow-y-auto">
-                            <div>
-                                <h2 className="text-3xl font-serif text-gray-900 dark:text-stone-50 mb-2">Style Report</h2>
-                                <p className="text-gray-500 dark:text-stone-400">Here is what our AI stylist thinks.</p>
-                            </div>
-
-                            <div className="flex-grow bg-white/50 dark:bg-stone-900/50 rounded-3xl p-6 border border-gray-100 dark:border-stone-800 overflow-y-auto custom-scrollbar">
-                                <p className="text-gray-800 dark:text-stone-200 whitespace-pre-wrap leading-relaxed text-sm md:text-base font-sans">
-                                    {advisorResult}
-                                </p>
-                            </div>
-
+                        {/* Main Card */}
+                        <div className="w-full max-w-6xl h-full max-h-[90vh] bg-white dark:bg-stone-900 md:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col md:flex-row relative ring-1 ring-gray-900/5 dark:ring-white/10">
+                            
+                            {/* Close Button */}
                             <button 
                                 onClick={resetAdvisor}
-                                className="w-full py-4 rounded-full bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 font-semibold hover:scale-[1.02] active:scale-95 transition-all shadow-lg"
+                                className="absolute top-4 right-4 z-50 p-2 bg-black/10 dark:bg-white/10 hover:bg-black/20 backdrop-blur-md rounded-full text-gray-900 dark:text-white"
                             >
-                                Analyze Another Outfit
+                                <XIcon className="w-6 h-6" />
                             </button>
+
+                            {/* Left Column: Image & Verdict */}
+                            <div className="w-full md:w-[40%] h-[35vh] md:h-full relative bg-gray-100 dark:bg-stone-800">
+                                {advisorPreview && (
+                                    <img src={advisorPreview} alt="Analyzed Outfit" className="w-full h-full object-cover" />
+                                )}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent"></div>
+                                <div className="absolute bottom-0 left-0 right-0 p-8 text-white">
+                                    <div className="inline-block px-3 py-1 mb-3 rounded-full bg-white/20 backdrop-blur border border-white/20 text-xs font-medium uppercase tracking-widest">
+                                        Style Report
+                                    </div>
+                                    <div className="font-serif text-3xl md:text-4xl leading-tight mb-2">
+                                        "{advisorResult.verdict}"
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Right Column: Analysis Grid */}
+                            <div className="flex-1 h-full overflow-y-auto bg-gray-50 dark:bg-stone-950 p-6 md:p-10 custom-scrollbar flex flex-col">
+                                
+                                {/* Header & Score - Redesigned SVG Gauge */}
+                                <div className="flex flex-col items-center justify-center mb-8 relative">
+                                    <div className="relative w-56 h-56 flex items-center justify-center">
+                                        
+                                        {/* SVG Gauge */}
+                                        <svg width="220" height="220" className="transform -rotate-90">
+                                            {/* Background Circle */}
+                                            <circle
+                                                cx="110"
+                                                cy="110"
+                                                r={radius}
+                                                fill="transparent"
+                                                stroke="currentColor"
+                                                strokeWidth="4"
+                                                className="text-gray-100 dark:text-stone-800"
+                                            />
+                                            {/* Progress Circle */}
+                                            <motion.circle
+                                                cx="110"
+                                                cy="110"
+                                                r={radius}
+                                                fill="transparent"
+                                                stroke={scoreColor}
+                                                strokeWidth="8"
+                                                strokeLinecap="round"
+                                                strokeDasharray={circumference}
+                                                initial={{ strokeDashoffset: circumference }}
+                                                animate={{ strokeDashoffset: circumference - progress }}
+                                                transition={{ duration: 1.5, ease: "easeOut" }}
+                                            />
+                                        </svg>
+                                        
+                                        {/* Center Text */}
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                            <motion.span 
+                                                className="text-7xl font-serif text-gray-900 dark:text-stone-100 leading-none relative"
+                                                initial={{ opacity: 0, scale: 0.5 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                transition={{ delay: 0.5, duration: 0.5 }}
+                                            >
+                                                {score}
+                                                <span className="absolute -top-2 -right-6 text-2xl text-amber-500">
+                                                    <SparklesIcon className="w-5 h-5 fill-current" />
+                                                </span>
+                                            </motion.span>
+                                            <span className="text-xs uppercase tracking-[0.2em] text-gray-400 font-semibold mt-2">/ 10 Score</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Cards Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                    <div className="bg-white dark:bg-stone-900 p-5 rounded-2xl border border-gray-100 dark:border-stone-800 shadow-sm">
+                                        <div className="flex items-center gap-2 mb-2 text-gray-500 dark:text-stone-400 text-xs uppercase tracking-wider font-semibold">
+                                            <div className="w-2 h-2 rounded-full bg-blue-500"></div> Fit Analysis
+                                        </div>
+                                        <p className="text-gray-900 dark:text-stone-200 text-sm leading-relaxed">
+                                            {advisorResult.fitAnalysis}
+                                        </p>
+                                    </div>
+                                    
+                                    <div className="bg-white dark:bg-stone-900 p-5 rounded-2xl border border-gray-100 dark:border-stone-800 shadow-sm">
+                                        <div className="flex items-center gap-2 mb-2 text-gray-500 dark:text-stone-400 text-xs uppercase tracking-wider font-semibold">
+                                            <div className="w-2 h-2 rounded-full bg-purple-500"></div> Color Palette
+                                        </div>
+                                        <p className="text-gray-900 dark:text-stone-200 text-sm leading-relaxed">
+                                            {advisorResult.colorCoordination}
+                                        </p>
+                                    </div>
+
+                                    <div className="bg-white dark:bg-stone-900 p-5 rounded-2xl border border-gray-100 dark:border-stone-800 shadow-sm">
+                                        <div className="flex items-center gap-2 mb-2 text-gray-500 dark:text-stone-400 text-xs uppercase tracking-wider font-semibold">
+                                            <div className="w-2 h-2 rounded-full bg-orange-500"></div> Best Occasion
+                                        </div>
+                                        <p className="text-gray-900 dark:text-stone-200 text-sm leading-relaxed">
+                                            {advisorResult.occasion}
+                                        </p>
+                                    </div>
+
+                                    <div className="bg-white dark:bg-stone-900 p-5 rounded-2xl border border-gray-100 dark:border-stone-800 shadow-sm">
+                                        <div className="flex items-center gap-2 mb-2 text-gray-500 dark:text-stone-400 text-xs uppercase tracking-wider font-semibold">
+                                            <div className="w-2 h-2 rounded-full bg-pink-500"></div> Key Accessory
+                                        </div>
+                                        <p className="text-gray-900 dark:text-stone-200 text-sm leading-relaxed">
+                                            {advisorResult.accessory}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="mt-auto pt-6 border-t border-gray-200 dark:border-stone-800 flex gap-4">
+                                    <button 
+                                        onClick={resetAdvisor}
+                                        className="flex-1 py-4 rounded-xl bg-gray-900 dark:bg-stone-100 text-white dark:text-stone-900 font-bold hover:shadow-lg transition-all"
+                                    >
+                                        Analyze New Look
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </motion.div>
                 )}

@@ -222,8 +222,8 @@ const App: React.FC = () => {
         }
       }
 
-    } catch (err) {
-      setError(getFriendlyErrorMessage(err as any, 'Failed to apply garment'));
+    } catch (err: any) { // Fix: Type error as any to handle unknown type
+      setError(getFriendlyErrorMessage(err, 'Failed to apply garment'));
       if (isMobile) setIsSheetCollapsed(false);
     } finally {
       setIsLoading(false);
@@ -259,8 +259,8 @@ const App: React.FC = () => {
           });
           setCurrentOutfitIndex(prev => prev + 1);
 
-      } catch (err) {
-          setError(getFriendlyErrorMessage(err as any, 'Failed to apply outfit'));
+      } catch (err: any) { // Fix: Type error as any to handle unknown type
+          setError(getFriendlyErrorMessage(err, 'Failed to apply outfit'));
           if (isMobile) setIsSheetCollapsed(false);
       } finally {
           setIsLoading(false);
@@ -333,8 +333,8 @@ const App: React.FC = () => {
         updatedLayer.poseImages[poseInstruction] = newImageUrl;
         return newHistory;
       });
-    } catch (err) {
-      setError(getFriendlyErrorMessage(err as any, 'Failed to change pose'));
+    } catch (err: any) { // Fix: Type error as any to handle unknown type
+      setError(getFriendlyErrorMessage(err, 'Failed to change pose'));
       setCurrentPoseIndex(prevPoseIndex);
     } finally {
       setIsLoading(false);
@@ -370,7 +370,7 @@ const App: React.FC = () => {
           });
           setCurrentScene(scene);
 
-      } catch (err) {
+      } catch (err: any) {
           setError(getFriendlyErrorMessage(err as any, 'Failed to change scene'));
       } finally {
           setIsLoading(false);

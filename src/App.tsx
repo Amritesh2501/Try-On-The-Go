@@ -222,8 +222,8 @@ const App: React.FC = () => {
         }
       }
 
-    } catch (err) {
-      setError(getFriendlyErrorMessage(err as any, 'Failed to apply garment'));
+    } catch (err: any) { // Fix: Type error as any to handle unknown type
+      setError(getFriendlyErrorMessage(err, 'Failed to apply garment'));
       if (isMobile) setIsSheetCollapsed(false);
     } finally {
       setIsLoading(false);
@@ -234,27 +234,6 @@ const App: React.FC = () => {
   const handleMultiGarmentSelect = useCallback(async (items: { file: File, info: WardrobeItem }[]) => {
       const currentImage = displayImageUrl;
       if (!currentImage || typeof currentImage !== 'string' || isLoading || items.length === 0) return;
-
-      // Check if the garment is already in the active stack (e.g. switching back to a previous layer)
-      const activeHistory = outfitHistory.slice(0, currentOutfitIndex + 1);
-      const existingIndex = activeHistory.findIndex(l => l.garment?.id === items[0].info.id); // Assuming primary check on first item for now or logic needs adjust for multi
-      
-      if (existingIndex !== -1) {
-          if (existingIndex !== currentOutfitIndex) {
-               setCurrentOutfitIndex(existingIndex);
-               setCurrentPoseIndex(0);
-               if (isMobile) setIsSheetCollapsed(true);
-               return;
-          }
-      } else {
-        const nextLayer = outfitHistory[currentOutfitIndex + 1];
-        if (nextLayer && nextLayer.garment?.id === items[0].info.id) {
-            setCurrentOutfitIndex(prev => prev + 1);
-            setCurrentPoseIndex(0); 
-             if (isMobile) setIsSheetCollapsed(true);
-            return;
-        }
-      }
 
       if (isMobile) setIsSheetCollapsed(true);
 
@@ -280,15 +259,15 @@ const App: React.FC = () => {
           });
           setCurrentOutfitIndex(prev => prev + 1);
 
-      } catch (err) {
-          setError(getFriendlyErrorMessage(err as any, 'Failed to apply outfit'));
+      } catch (err: any) { // Fix: Type error as any to handle unknown type
+          setError(getFriendlyErrorMessage(err, 'Failed to apply outfit'));
           if (isMobile) setIsSheetCollapsed(false);
       } finally {
           setIsLoading(false);
           setLoadingMessage('');
       }
 
-  }, [displayImageUrl, isLoading, currentPoseIndex, currentOutfitIndex, isMobile, outfitHistory]);
+  }, [displayImageUrl, isLoading, currentPoseIndex, currentOutfitIndex, isMobile]);
 
   const handleUndo = useCallback(() => {
     if (currentOutfitIndex > 0) {
@@ -354,8 +333,8 @@ const App: React.FC = () => {
         updatedLayer.poseImages[poseInstruction] = newImageUrl;
         return newHistory;
       });
-    } catch (err) {
-      setError(getFriendlyErrorMessage(err as any, 'Failed to change pose'));
+    } catch (err: any) { // Fix: Type error as any to handle unknown type
+      setError(getFriendlyErrorMessage(err, 'Failed to change pose'));
       setCurrentPoseIndex(prevPoseIndex);
     } finally {
       setIsLoading(false);
@@ -368,7 +347,7 @@ const App: React.FC = () => {
       const currentImage = displayImageUrl;
       if (isLoading || !currentImage || typeof currentImage !== 'string' || scene === currentScene) return;
       
-      const imageToProcess: string = currentImage; // Explicitly capture as string
+      const imageToProcess = currentImage as string; // Explicitly capture as string
 
       setError(null);
       setIsLoading(true);
@@ -391,8 +370,8 @@ const App: React.FC = () => {
           });
           setCurrentScene(scene);
 
-      } catch (err) {
-          setError(getFriendlyErrorMessage(err as any, 'Failed to change scene'));
+      } catch (err: any) {
+          setError(getFriendlyErrorMessage(err, 'Failed to change scene'));
       } finally {
           setIsLoading(false);
           setLoadingMessage('');

@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, Modality, Type } from "@google/genai";
+import { StyleAdvice } from "../types";
 
 const fileToPart = async (file: File) => {
     const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -150,6 +151,29 @@ export const generateMultiGarmentTryOn = async (modelImageUrl: string, garmentFi
     return handleApiResponse(response);
 };
 
+export const generateGarmentFromText = async (description: string): Promise<string> => {
+    const systemInstruction = "You are an expert fashion designer. Your goal is to design clothing items based on text descriptions.";
+    
+    const prompt = `Create a high-quality, photorealistic product image of the following clothing item: "${description}".
+    
+    Instructions:
+    1. The image must show the garment isolated on a plain white background.
+    2. The garment should be facing forward, fully visible.
+    3. The style should be realistic, like a high-end e-commerce product shot.
+    4. Do not include a human model, mannequins, or hangers. Just the clothing item.
+    5. Return ONLY the generated image.`;
+
+    const response = await ai.models.generateContent({
+        model,
+        contents: { parts: [{ text: prompt }] },
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+            systemInstruction
+        },
+    });
+    return handleApiResponse(response);
+};
+
 export const generatePoseVariation = async (tryOnImageUrl: string, poseInstruction: string): Promise<string> => {
     const tryOnImagePart = dataUrlToPart(tryOnImageUrl);
     
@@ -160,7 +184,7 @@ export const generatePoseVariation = async (tryOnImageUrl: string, poseInstructi
     Target Pose: "${poseInstruction}".
     
     Instructions:
-    1. Keep the person, their clothing, and the background style EXACTLY the same.
+    1. Keep the person, their clothing, and the background style EXACTLY as they appear in the original image.
     2. Change ONLY the pose and camera angle to match the Target Pose.
     3. Ensure photorealistic quality.
     4. Return ONLY the final image.`;
@@ -202,18 +226,33 @@ export const generateSceneVariation = async (currentImageUrl: string, sceneDescr
     return handleApiResponse(response);
 };
 
-export const generateStyleAdvice = async (imageUrl: string): Promise<string> => {
+export const generateStyleAdvice = async (imageUrl: string): Promise<StyleAdvice> => {
     const imagePart = dataUrlToPart(imageUrl);
-    const systemInstruction = "You are a friendly, encouraging, and expert fashion stylist. Your tone is helpful, chic, and concise.";
-    const prompt = "Analyze this outfit. 1. Rate the fit (1-10). 2. Comment on color coordination. 3. Suggest one occasion this is perfect for. 4. Suggest one accessory to complete the look. Keep the response formatted with clear emojis and short paragraphs.";
+    const prompt = "Analyze this outfit and return structured advice.";
 
-    // Use gemini-2.5-flash for multimodal text tasks as per guidelines
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: { parts: [imagePart, { text: prompt }] },
         config: {
-            systemInstruction
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    score: { type: Type.NUMBER, description: "Rating from 1-10" },
+                    verdict: { type: Type.STRING, description: "A chic, 1-sentence summary of the look." },
+                    fitAnalysis: { type: Type.STRING, description: "Concise analysis of the fit." },
+                    colorCoordination: { type: Type.STRING, description: "Comments on the color palette." },
+                    occasion: { type: Type.STRING, description: "Best occasion for this outfit." },
+                    accessory: { type: Type.STRING, description: "One specific accessory recommendation." },
+                },
+                required: ["score", "verdict", "fitAnalysis", "colorCoordination", "occasion", "accessory"]
+            }
         },
     });
-    return response.text || "You look great! I couldn't generate specific advice right now.";
+    
+    if (response.text) {
+        return JSON.parse(response.text) as StyleAdvice;
+    }
+    
+    throw new Error("Failed to generate advice");
 };
